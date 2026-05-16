@@ -73,7 +73,8 @@ pub fn place_move(x: usize, y: usize, state: State<AppState>) -> Result<BoardSta
 
     let stone = board.current_player;
     let board_size = board.size;
-    let result = history.place(&mut board, x, y, stone, false);
+    let creates_branch = history.head.borrow().next().is_some();
+    let result = history.place(&mut board, x, y, stone, creates_branch);
     match result {
         PlaceResult::Legal => {
             let board_state = board.to_state();

@@ -40,6 +40,10 @@ export class TauriClient implements ApiClient {
     return invoke<BoardState>('goto_move', { moveNumber });
   }
 
+  async gotoTreePath(path: number[]): Promise<BoardState> {
+    return invoke<BoardState>('goto_tree_path', { path });
+  }
+
   async addStone(x: number, y: number, isBlack: boolean): Promise<BoardState> {
     return invoke<BoardState>('add_stone', { x, y, isBlack });
   }

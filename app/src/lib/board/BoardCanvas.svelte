@@ -3,13 +3,19 @@
   import type { BoardState, StoneColor } from '../api/types';
   import { CoordinateSystem } from './coordinate-system';
   import { drawBoard, drawHoverPreview, preloadAssets } from './board-renderer';
-  import { drawOverlay } from './overlay-renderer';
-  import type { AnalysisData } from '../api/types';
+  import { drawOverlay, hitTestCandidateMove } from './overlay-renderer';
+  import type { AnalysisData, MoveData } from '../api/types';
 
-  let { board, analysis = null, onCellClick, boardPx, showCoordinates = true }: {
+  let { board, analysis = null, previewMove = null, showPvRoute = false, showCandidateMarkers = true, showPvPath = true, onCellClick, onPreviewMove, onClearPreview, boardPx, showCoordinates = true }: {
     board: BoardState;
     analysis?: AnalysisData | null;
+    previewMove?: MoveData | null;
+    showPvRoute?: boolean;
+    showCandidateMarkers?: boolean;
+    showPvPath?: boolean;
     onCellClick?: (x: number, y: number) => void;
+    onPreviewMove?: (move: MoveData) => void;
+    onClearPreview?: () => void;
     boardPx?: number; // 不传则自适应容器
     showCoordinates?: boolean;
   } = $props();
@@ -17,6 +23,7 @@
   let canvas: HTMLCanvasElement | undefined = $state();
   let containerEl: HTMLDivElement | undefined = $state();
   let hoverPos: [number, number] | null = $state(null);
+  let hoveredCandidate: MoveData | null = $state(null);
   const dpr = window.devicePixelRatio || 1;
 
   // 实际渲染尺寸：优先用 prop，否则从容器计算
@@ -44,11 +51,11 @@
 
     // Overlay (engine suggestions)
     if (analysis) {
-      drawOverlay(ctx, analysis, board, coords);
+      drawOverlay(ctx, analysis, board, coords, previewMove, showPvRoute, showCandidateMarkers, showPvPath);
     }
 
     // Hover preview
-    if (hoverPos && board.stones[hoverPos[1]][hoverPos[0]] === 'EMPTY') {
+    if (hoverPos && !hoveredCandidate && board.stones[hoverPos[1]][hoverPos[0]] === 'EMPTY') {
       drawHoverPreview(ctx, coords, hoverPos[0], hoverPos[1], board.current_player);
     }
     ctx.restore();
@@ -60,13 +67,21 @@
     // Convert CSS pixels to logical board coordinates
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
+    const candidate = analysis ? hitTestCandidateMove(analysis, board, coords, px, py) : null;
+    if (candidate !== hoveredCandidate) {
+      hoveredCandidate = candidate;
+      if (candidate) onPreviewMove?.(candidate);
+      else onClearPreview?.();
+    }
     const pos = coords.pixelToCoord(px, py);
-    hoverPos = pos;
+    hoverPos = candidate ? null : pos;
     render();
   }
 
   function handleMouseLeave() {
     hoverPos = null;
+    hoveredCandidate = null;
+    onClearPreview?.();
     render();
   }
 

@@ -198,6 +198,13 @@
     border: 1px solid var(--border);
   }
 
+  :global([data-theme="light"]) .tb-btn kbd {
+    background: linear-gradient(180deg, #f8fafc, #e2e8f0);
+    border-color: rgba(100, 116, 139, 0.28);
+    color: #334155;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.08);
+  }
+
   .tb-btn.icon-only {
     width: 31px;
     padding: 6px;

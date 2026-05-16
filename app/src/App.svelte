@@ -12,7 +12,7 @@
   import ResizableSplitter from './lib/layout/ResizableSplitter.svelte';
   import AutoResizeBoard from './lib/layout/AutoResizeBoard.svelte';
   import { TauriClient } from './lib/api/tauri-client';
-  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type WinratePoint, type TreeNode, type AppConfig } from './lib/api/types';
+  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type WinratePoint, type TreeNode, type AppConfig, type MoveData } from './lib/api/types';
   import { isDesktop, minimizeWindow, toggleMaximizeWindow, closeWindow } from './lib/state/runtime';
   import { emptyFileState, markDirty, openSgfFile, refreshTreePath, saveSgfFile, type GameFileState } from './lib/state/game-actions';
   import { applyUiConfig, loadConfig, persistConfig } from './lib/state/config-state';
@@ -49,6 +49,7 @@
   let fileState: GameFileState = $state({ ...emptyFileState });
   let showSettings: boolean = $state(false);
   let busyAction: string = $state('');
+  let previewMove: MoveData | null = $state(null);
 
   const analysisActive = $derived(analysis != null && (analysis as AnalysisData).total_playouts > 0);
   const configuredEngine = $derived(firstEngine(config.engines));
@@ -78,7 +79,7 @@
     try {
       board = await fn();
       fileState = markDirty(fileState);
-      fetchTreePath();
+      await fetchTreePath();
       error = '';
     } catch (e) { error = String(e); }
   }
@@ -90,7 +91,7 @@
 
   async function placeMove(x: number, y: number) {
     if (!api || !board) return;
-    try { board = await api.placeMove(x, y); fileState = markDirty(fileState); fetchTreePath(); error = ''; }
+    try { board = await api.placeMove(x, y); fileState = markDirty(fileState); await fetchTreePath(); error = ''; }
     catch (e) { error = String(e); }
   }
 
@@ -130,6 +131,11 @@
     updateBoard(() => api!.gotoMove(moveNumber));
   }
 
+  async function gotoTreePath(path: number[]) {
+    if (!api) return;
+    updateBoard(() => api!.gotoTreePath(path));
+  }
+
   function handleCellClick(x: number, y: number) {
     if (!board) return;
     if (editMode) {
@@ -145,6 +151,36 @@
     } else {
       placeMove(x, y);
     }
+  }
+
+  function playCandidateMove(coordinate: string) {
+    if (!board) return;
+    const pos = gtpToCoord(coordinate, board.size);
+    if (!pos) {
+      error = `Cannot play candidate move: ${coordinate}`;
+      return;
+    }
+    placeMove(pos[0], pos[1]);
+  }
+
+  function previewCandidate(move: MoveData) {
+    previewMove = move;
+  }
+
+  function clearCandidatePreview() {
+    previewMove = null;
+  }
+
+  function gtpToCoord(coord: string, size: number): [number, number] | null {
+    if (coord.toLowerCase() === 'pass') return null;
+    const match = coord.match(/^([A-HJ-Za-hj-z])(\d+)$/);
+    if (!match) return null;
+    const colChar = match[1].toUpperCase();
+    let x = colChar.charCodeAt(0) - 'A'.charCodeAt(0);
+    if (colChar > 'I') x -= 1;
+    const y = size - Number.parseInt(match[2], 10);
+    if (x < 0 || x >= size || y < 0 || y >= size) return null;
+    return [x, y];
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -249,28 +285,29 @@
     catch (e) { error = String(e); }
   }
 
+  function appendWinratePoint(boardState: BoardState, data: AnalysisData) {
+    if (data.best_moves.length === 0) return;
+    const bestMove = data.best_moves[0];
+    const blackWr = boardState.current_player === 'BLACK' ? bestMove.winrate : 100 - bestMove.winrate;
+    const scoreMean = boardState.current_player === 'BLACK' ? bestMove.score_mean : -bestMove.score_mean;
+    const point = {
+      move_number: boardState.move_number,
+      black_winrate: blackWr,
+      score_mean: scoreMean,
+    };
+
+    winrateHistory = [
+      ...winrateHistory.filter(p => p.move_number !== point.move_number),
+      point,
+    ].sort((a, b) => a.move_number - b.move_number);
+  }
+
   function setupEngineListeners() {
     if (!api) return;
 
     api.onAnalysisUpdate((data: AnalysisData) => {
       analysis = data;
-      if (board && data.best_moves.length > 0) {
-        const bestWr = data.best_moves[0].winrate;
-        const blackWr = board.current_player === 'BLACK' ? bestWr : 100 - bestWr;
-        const scoreMean = board.current_player === 'BLACK'
-          ? data.best_moves[0].score_mean
-          : -data.best_moves[0].score_mean;
-        const point = {
-          move_number: board.move_number,
-          black_winrate: blackWr,
-          score_mean: scoreMean,
-        };
-        const currentMove = board!.move_number;
-        winrateHistory = [
-          ...winrateHistory.filter(p => p.move_number < currentMove),
-          point,
-        ];
-      }
+      if (board) appendWinratePoint(board, data);
     });
 
     api.onEngineIdentified((data) => {
@@ -347,7 +384,10 @@
             <AutoResizeBoard
               {board}
               {analysis}
+              {previewMove}
               onCellClick={handleCellClick}
+              onPreviewMove={previewCandidate}
+              onClearPreview={clearCandidatePreview}
               containerRef={boardAreaRef}
             />
           {:else}
@@ -375,6 +415,9 @@
               onStopEngine={handleStopEngine}
               onTogglePonder={handleTogglePonder}
               onGenmove={handleGenmove}
+              onPlayMove={playCandidateMove}
+              onPreviewMove={previewCandidate}
+              onClearPreview={clearCandidatePreview}
               onOpenSettings={() => showSettings = true}
             />
             {#if showEngine2}
@@ -388,7 +431,7 @@
             <div class="rp-col-left">
               {#if winrateHistory.length > 0}
                 <div class="graph-container">
-                  <WinrateGraph {winrateHistory} onNavigate={gotoMove} currentMove={board?.move_number ?? 0} />
+                  <WinrateGraph {winrateHistory} onNavigate={gotoMove} currentMove={board?.move_number ?? 0} boardMove={board?.move_number ?? 0} />
                 </div>
               {:else}
                 <div class="graph-container graph-container-empty panel-card analysis-skeleton">
@@ -422,7 +465,7 @@
               {/if}
               <div class="movelist-container" class:empty={treePath.length === 0}>
                 {#if treePath.length > 0}
-                  <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoMove} />
+                  <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoTreePath} />
                 {:else}
                   <div class="panel-card starter-movelist">
                     <div class="starter-header">
@@ -446,7 +489,7 @@
                 </div>
                 <div class="sb-body sb-body-preview" style:width={`${previewSize}px`} style:height={`${previewSize}px`} style:position="relative">
                   {#if board}
-                    <BoardCanvas {board} analysis={null} onCellClick={() => {}} boardPx={previewSize} showCoordinates={false} />
+                    <BoardCanvas {board} {analysis} previewMove={previewMove ?? analysis?.best_moves?.[0] ?? null} showPvRoute={true} showCandidateMarkers={false} showPvPath={false} onCellClick={() => {}} boardPx={previewSize} showCoordinates={false} />
                     <!-- 右下角拖动手柄 -->
                     <div
                       class="resize-corner"
@@ -545,8 +588,8 @@
     flex: 1;
     overflow: hidden;
     min-height: 0;
-    padding: 6px;
-    gap: 6px;
+    padding: 2px;
+    gap: 4px;
   }
 
   .board-area {
@@ -554,13 +597,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 14px;
+    padding: 2px;
     position: relative;
     width: 100%;
     height: 100%;
     overflow: hidden;
     border: 1px solid var(--border-subtle);
-    border-radius: 10px;
+    border-radius: 8px;
     background: radial-gradient(circle at 50% 38%, rgba(148, 163, 184, 0.08), transparent 62%), color-mix(in srgb, var(--surface-1) 92%, transparent);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   }
@@ -635,7 +678,8 @@
   /* Main zone: fills ALL remaining vertical space */
   .rp-main {
     flex: 1;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
     gap: 6px;
     padding: 6px;
     min-height: 0;
@@ -644,31 +688,29 @@
 
   /* Left column: graph + move list */
   .rp-col-left {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     min-width: 0;
     min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(150px, 1fr) minmax(112px, 132px);
+    gap: 6px;
     overflow: hidden;
   }
 
   .graph-container {
-    flex: 1;
-    min-height: 180px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
   .graph-container-empty {
-    flex: 0 0 38%;
-    min-height: 170px;
+    min-height: 150px;
   }
 
   .analysis-skeleton {
     display: flex;
     flex-direction: column;
-    min-height: 190px;
+    min-height: 0;
   }
 
   .skeleton-header {
@@ -825,21 +867,17 @@
   }
 
   .movelist-container {
-    flex: 0 0 178px;
-    min-height: 132px;
+    min-height: 0;
     overflow-y: auto;
   }
 
   .movelist-container.empty {
-    flex-basis: 118px;
-    min-height: 118px;
     overflow: hidden;
   }
 
   /* Right column: sidebar */
   .rp-col-right {
-    flex-shrink: 0;
-    width: 220px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;

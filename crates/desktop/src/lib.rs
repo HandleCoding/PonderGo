@@ -76,6 +76,7 @@ pub fn run() {
             sgf_cmd::load_sgf,
             sgf_cmd::save_sgf,
             tree_cmd::get_tree_path,
+            tree_cmd::goto_tree_path,
             tree_cmd::next_variation,
             config_cmd::get_config,
             config_cmd::save_config,

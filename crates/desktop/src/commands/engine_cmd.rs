@@ -3,6 +3,7 @@ use tauri::{Emitter, State};
 
 use ponder_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
 use ponder_core::engine::move_data::MoveData;
+use ponder_core::go::stone::Stone;
 use crate::AppState;
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,15 @@ pub fn start_engine(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
 ) -> Result<(), String> {
+    let board_state = {
+        let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+        board.to_state()
+    };
+    let moves_to_replay = {
+        let history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+        history.moves_to_head()
+    };
+
     let mut engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
 
     // Stop existing engine if any
@@ -204,6 +214,7 @@ pub fn start_engine(
     let mut engine = GtpEngine::new(config);
     engine.add_listener(Box::new(TauriEngineListener::new(app_handle)));
     engine.start()?;
+    sync_engine_position(&engine, board_state.size, board_state.komi, &moves_to_replay);
 
     *engine_guard = Some(engine);
     Ok(())
@@ -226,7 +237,8 @@ pub fn toggle_ponder(state: State<AppState>) -> Result<bool, String> {
     let engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
     match engine_guard.as_ref() {
         Some(engine) => {
-            engine.toggle_ponder();
+            let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+            engine.toggle_ponder_with_player(board.current_player == Stone::Black);
             Ok(engine.is_pondering())
         }
         None => Err("No engine running".to_string()),
@@ -260,6 +272,15 @@ pub fn get_analysis(state: State<AppState>) -> Result<AnalysisData, String> {
     }
 }
 
+fn sync_engine_position(engine: &GtpEngine, board_size: usize, komi: f64, moves: &[(String, String)]) {
+    engine.boardsize(board_size);
+    engine.komi(komi);
+    engine.clear_board();
+    for (color, coord) in moves {
+        engine.play_move(color, coord);
+    }
+}
+
 impl Default for EngineStatus {
     fn default() -> Self {
         EngineStatus {
@@ -284,6 +305,15 @@ pub fn start_engine2(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
 ) -> Result<(), String> {
+    let board_state = {
+        let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+        board.to_state()
+    };
+    let moves_to_replay = {
+        let history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+        history.moves_to_head()
+    };
+
     let mut engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
 
     if let Some(ref engine) = *engine_guard {
@@ -300,6 +330,7 @@ pub fn start_engine2(
     let mut engine = GtpEngine::new(config);
     engine.add_listener(Box::new(TauriEngine2Listener::new(app_handle)));
     engine.start()?;
+    sync_engine_position(&engine, board_state.size, board_state.komi, &moves_to_replay);
 
     *engine_guard = Some(engine);
     Ok(())

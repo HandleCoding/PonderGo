@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EngineStatus, AnalysisData } from '../api/types';
+  import type { EngineStatus, AnalysisData, MoveData } from '../api/types';
   import EmptyState from '../components/EmptyState.svelte';
 
   let {
@@ -12,6 +12,9 @@
     onTogglePonder,
     onGenmove,
     onOpenSettings,
+    onPlayMove,
+    onPreviewMove,
+    onClearPreview,
   }: {
     status: EngineStatus;
     analysis?: AnalysisData | null;
@@ -22,6 +25,9 @@
     onTogglePonder?: () => void;
     onGenmove?: () => void;
     onOpenSettings?: () => void;
+    onPlayMove?: (coordinate: string) => void;
+    onPreviewMove?: (move: MoveData) => void;
+    onClearPreview?: () => void;
   } = $props();
 
   function formatPlayouts(n: number): string {
@@ -173,34 +179,49 @@
         <span class="wr-overview-text">{bestWinrate.toFixed(1)}% vs {(100 - bestWinrate).toFixed(1)}%</span>
       </div>
 
-      <div class="moves-table">
-        <div class="table-header">
-          <span class="col-rank">#</span>
-          <span class="col-move">着法</span>
-          <span class="col-winrate">胜率</span>
-          <span class="col-score">目差</span>
-          <span class="col-visits">计算量</span>
-        </div>
-        {#each topMoves as move, i}
-          <div class="table-row" class:first={i === 0} style="background: {i === 0 ? 'transparent' : winrateBarBg(move.winrate)}">
-            <span class="col-rank">
-              {#if i === 0}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--yellow)" stroke="var(--yellow)" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              {:else}
-                {i + 1}
-              {/if}
-            </span>
-            <span class="col-move">{move.coordinate}</span>
-            <span class="col-winrate">
-              <div class="wr-bar-wrap">
-                <div class="wr-bar" style="width: {move.winrate}%; background: {winrateBarColor(move.winrate)}"></div>
-                <span class="wr-text">{move.winrate.toFixed(1)}%</span>
-              </div>
-            </span>
-            <span class="col-score">{scoreDisplay(move.score_mean, move.is_kata_data)}</span>
-            <span class="col-visits">{formatPlayouts(move.playouts)}</span>
+      <div class="moves-table-shell">
+        <div class="moves-table">
+          <div class="table-header">
+            <span class="col-rank">#</span>
+            <span class="col-move">着法</span>
+            <span class="col-winrate">胜率</span>
+            <span class="col-score">目差</span>
+            <span class="col-visits">计算量</span>
           </div>
-        {/each}
+          <div class="table-body">
+            {#each topMoves as move, i}
+              <button
+                type="button"
+                class="table-row"
+                class:first={i === 0}
+                style="background: {i === 0 ? 'transparent' : winrateBarBg(move.winrate)}"
+                title={`Play ${move.coordinate}`}
+                onmouseenter={() => onPreviewMove?.(move)}
+                onfocus={() => onPreviewMove?.(move)}
+                onmouseleave={onClearPreview}
+                onblur={onClearPreview}
+                onclick={() => onPlayMove?.(move.coordinate)}
+              >
+                <span class="col-rank">
+                  {#if i === 0}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--yellow)" stroke="var(--yellow)" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  {:else}
+                    {i + 1}
+                  {/if}
+                </span>
+                <span class="col-move">{move.coordinate}</span>
+                <span class="col-winrate">
+                  <div class="wr-bar-wrap">
+                    <div class="wr-bar" style="width: {move.winrate}%; background: {winrateBarColor(move.winrate)}"></div>
+                    <span class="wr-text">{move.winrate.toFixed(1)}%</span>
+                  </div>
+                </span>
+                <span class="col-score">{scoreDisplay(move.score_mean, move.is_kata_data)}</span>
+                <span class="col-visits">{formatPlayouts(move.playouts)}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
       </div>
 
       <!-- PV sequence display -->
@@ -232,6 +253,10 @@
     border: 1px solid var(--border-subtle);
     overflow: hidden;
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    display: flex;
+    flex-direction: column;
+    max-height: clamp(300px, 48vh, 420px);
+    min-height: 0;
   }
 
   :global([data-theme="light"]) .engine-panel,
@@ -424,19 +449,55 @@
 
   .wr-overview-text {
     position: absolute;
-    inset: 0;
-    display: flex;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #f8fafc;
     font-size: 10px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-weight: 700;
     font-family: var(--font-mono);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    line-height: 1.2;
+    white-space: nowrap;
     pointer-events: none;
   }
 
-  /* Moves table */
+  :global([data-theme="light"]) .wr-overview-text {
+    background: rgba(255, 255, 255, 0.86);
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+  }
+
+  :global([data-theme="light"]) .wr-overview-white {
+    background: #e5e7eb;
+  }
+
+  :global([data-theme="light"]) .wr-overview-black {
+    background: #1f2937;
+  }
+
+  .moves-table-shell {
+    min-height: 0;
+    max-height: clamp(126px, 20vh, 216px);
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-subtle);
+    scrollbar-gutter: stable;
+  }
+
+  .moves-table-shell::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .moves-table-shell::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+  }
+
   .moves-table {
     font-size: 12px;
   }
@@ -449,21 +510,42 @@
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
     border-bottom: 1px solid var(--border-subtle);
     background: rgba(2, 6, 23, 0.12);
+  }
+
+  .table-body {
+    min-width: 0;
   }
 
   .table-row {
     display: grid;
     grid-template-columns: 36px 48px 1fr 64px 56px;
-    padding: 4px 12px;
+    width: 100%;
+    padding: 3px 12px;
     align-items: center;
     border-bottom: 1px solid rgba(148, 163, 184, 0.07);
-    transition: background 0.1s;
+    transition: background 0.1s, box-shadow 0.1s, transform 0.1s;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
   }
 
   .table-row:hover {
-    background: var(--bg-tertiary);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-tertiary));
+    box-shadow: inset 3px 0 0 var(--accent), 0 1px 6px rgba(14, 165, 233, 0.12);
+  }
+
+  .table-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .table-row:active {
+    transform: translateY(1px);
   }
 
   .table-row.first {
@@ -471,7 +553,7 @@
   }
 
   .table-row.first:hover {
-    background: rgba(14, 165, 233, 0.15);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
   .col-rank {
@@ -535,7 +617,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 14px 10px;
+    padding: 5px 14px 6px;
     font-size: 11px;
     border-top: 1px solid var(--border);
     margin-top: 2px;

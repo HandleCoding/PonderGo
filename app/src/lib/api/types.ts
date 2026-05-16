@@ -107,6 +107,9 @@ export interface TreeNode {
   is_black: boolean;
   comment: string;
   variation_count: number;
+  variation_index: number;
+  branch_depth: number;
+  path: number[];
   is_current: boolean;
 }
 

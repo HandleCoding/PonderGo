@@ -15,6 +15,8 @@
     onClose?: () => void;
   } = $props();
 
+  const defaultKatagoCommand = '/opt/homebrew/bin/katago gtp -config "/opt/homebrew/Cellar/katago/1.16.4/share/katago/configs/gtp_example.cfg" -model "/opt/homebrew/Cellar/katago/1.16.4/share/katago/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz"';
+
   let activeTab = $state<'general' | 'engine' | 'board' | 'theme'>('general');
   let draft = $state<AppConfig>(defaultAppConfig());
 
@@ -36,7 +38,7 @@
       ...draft,
       engines: [
         ...draft.engines,
-        { name: 'New Engine', command: '', initial_commands: '', analyze_interval_cs: 10 },
+        { name: 'KataGo', command: defaultKatagoCommand, initial_commands: '', analyze_interval_cs: 10 },
       ],
     };
   }
@@ -98,7 +100,7 @@
                   </label>
                   <label class="field">
                     <span>Command</span>
-                    <input value={engine.command} placeholder="/path/to/katago gtp -config ..." oninput={(e) => updateEngine(i, { command: e.currentTarget.value })} />
+                    <input value={engine.command} placeholder={defaultKatagoCommand} oninput={(e) => updateEngine(i, { command: e.currentTarget.value })} />
                   </label>
                   <label class="field">
                     <span>Initial commands</span>

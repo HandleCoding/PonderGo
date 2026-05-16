@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::env;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -315,11 +317,18 @@ impl GtpEngine {
             return Err("Engine command is empty".to_string());
         }
 
-        let mut child = Command::new(&args[0])
+        let mut command = Command::new(&args[0]);
+        command
             .args(&args[1..])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(log_dir) = engine_working_dir() {
+            command.current_dir(log_dir);
+        }
+
+        let mut child = command
             .spawn()
             .map_err(|e| format!("Failed to start engine: {}", e))?;
 
@@ -523,7 +532,7 @@ impl GtpEngine {
         state.current_total_playouts = 0;
         drop(state);
         if self.is_pondering() {
-            self.ponder();
+            self.ponder_with_player(true);
         }
     }
 
@@ -536,7 +545,7 @@ impl GtpEngine {
         state.current_total_playouts = 0;
         drop(state);
         if self.is_pondering() {
-            self.ponder();
+            self.ponder_with_player(!color.eq_ignore_ascii_case("B"));
         }
     }
 
@@ -643,6 +652,14 @@ impl GtpEngine {
             self.stop_ponder();
         } else {
             self.ponder();
+        }
+    }
+
+    pub fn toggle_ponder_with_player(&self, black_to_play: bool) {
+        if self.is_pondering() {
+            self.stop_ponder();
+        } else {
+            self.ponder_with_player(black_to_play);
         }
     }
 
@@ -769,6 +786,17 @@ impl Drop for GtpEngine {
     }
 }
 
+fn engine_working_dir() -> Option<std::path::PathBuf> {
+    let dir = env::temp_dir().join("pondergo-engine");
+    match fs::create_dir_all(&dir) {
+        Ok(()) => Some(dir),
+        Err(e) => {
+            warn!("Failed to create engine working directory: {}", e);
+            None
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Writer thread — owns stdin, flushes after each write
 // ---------------------------------------------------------------------------
@@ -783,6 +811,7 @@ fn writer_thread_fn(
                 let mut stdin_guard = stdin.lock().unwrap();
                 if let Some(ref mut stdin) = *stdin_guard {
                     debug!("GTP > {}", command);
+                    eprintln!("GTP > {}", command);
                     if let Err(e) = writeln!(stdin, "{}", command) {
                         error!("Failed to write to engine stdin: {}", e);
                     }
@@ -814,6 +843,7 @@ fn read_stdout(
     for line in reader.lines() {
         match line {
             Ok(line) => {
+                eprintln!("GTP < {}", line);
                 let commands_to_send =
                     parse_line(&line, &state, &listeners);
 
@@ -849,6 +879,7 @@ fn read_stderr(stderr: ChildStderr, _state: Arc<Mutex<EngineState>>) {
         match line {
             Ok(line) => {
                 debug!("Engine stderr: {}", line);
+                eprintln!("Engine stderr: {}", line);
             }
             Err(_) => break,
         }

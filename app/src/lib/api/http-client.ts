@@ -28,6 +28,7 @@ export class HttpClient implements ApiClient {
   async nextMove(): Promise<any> { throw new Error('Not implemented'); }
   async previousMove(): Promise<any> { throw new Error('Not implemented'); }
   async gotoMove(_moveNumber: number): Promise<any> { throw new Error('Not implemented'); }
+  async gotoTreePath(_path: number[]): Promise<any> { throw new Error('Not implemented'); }
   async addStone(_x: number, _y: number, _isBlack: boolean): Promise<any> { throw new Error('Not implemented'); }
   async removeStone(_x: number, _y: number): Promise<any> { throw new Error('Not implemented'); }
   async newGame(_size?: number): Promise<any> { throw new Error('Not implemented'); }

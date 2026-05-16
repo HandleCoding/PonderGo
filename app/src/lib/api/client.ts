@@ -17,6 +17,7 @@ export interface ApiClient {
   nextMove(): Promise<BoardState>;
   previousMove(): Promise<BoardState>;
   gotoMove(moveNumber: number): Promise<BoardState>;
+  gotoTreePath(path: number[]): Promise<BoardState>;
   addStone(x: number, y: number, isBlack: boolean): Promise<BoardState>;
   removeStone(x: number, y: number): Promise<BoardState>;
   newGame(size?: number): Promise<BoardState>;

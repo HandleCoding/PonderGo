@@ -396,6 +396,17 @@ impl BoardHistoryList {
         moved
     }
 
+    /// Navigate to a node by variation indexes from the root.
+    pub fn go_to_path(&mut self, path: &[usize]) -> Option<BoardData> {
+        let mut current = self.root.clone();
+        for &idx in path {
+            let next = current.borrow().get_variation(idx)?;
+            current = next;
+        }
+        self.head = current;
+        Some(self.head.borrow().data.clone())
+    }
+
     /// Check if placing a stone would violate the simple ko rule.
     /// Ko = position is identical to the position 2 moves ago (grandparent).
     pub fn violates_ko_rule(&self, data: &BoardData) -> bool {
@@ -474,7 +485,8 @@ impl BoardHistoryList {
     pub fn pass_move(&mut self, board: &mut Board) {
         board.pass();
         let new_data = board.to_data();
-        self.add_or_goto(new_data, false);
+        let new_branch = self.head.borrow().next().is_some();
+        self.add_or_goto(new_data, new_branch);
     }
 
     /// Get the current move number.
