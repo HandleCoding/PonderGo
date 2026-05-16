@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { preloadAssets, getBackgroundImage } from './lib/board/board-renderer';
   import BoardCanvas from './lib/board/BoardCanvas.svelte';
   import EnginePanel from './lib/panels/EnginePanel.svelte';
   import WinrateGraph from './lib/charts/WinrateGraph.svelte';
@@ -35,8 +36,16 @@
   let showEngine2: boolean = $state(false);
   let comment: string = $state('');
   let boardAreaRef: HTMLDivElement | undefined = $state();
+  let isDark: boolean = $state(true);
+  let bgImageUrl: string | undefined = $state(undefined);
+  let previewSize: number = $state(220); // Preview 棋盘正方形尺寸（px），可拖动角落缩放
 
   const analysisActive = $derived(analysis != null && (analysis as AnalysisData).total_playouts > 0);
+
+  function toggleTheme() {
+    isDark = !isDark;
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }
 
   async function fetchBoard() {
     if (!api) { board = mockBoard(); return; }
@@ -123,6 +132,35 @@
     else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoMove(); }
   }
 
+  /** 拖动 Preview 右下角等比例缩放棋盘 */
+  function startResizePreview(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startS = previewSize;
+
+    function onMove(ev: MouseEvent) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      // 取较大变化值（保持正方形）
+      const delta = Math.max(dx, dy);
+      previewSize = Math.max(120, Math.min(380, startS + delta));
+    }
+
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    document.body.style.cursor = 'nwse-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
   function setupEngineListeners() {
     if (!api) return;
 
@@ -177,18 +215,23 @@
     };
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await preloadAssets();
+    const bgImg = getBackgroundImage();
+    if (bgImg) bgImageUrl = '/theme/background.jpg';
     fetchBoard();
     setupEngineListeners();
     window.addEventListener('keydown', handleKeydown);
+    document.documentElement.setAttribute('data-theme', 'dark');
   });
 </script>
 
-<div class="app-layout">
+<div class="app-layout" style:background-image={bgImageUrl ? `url(${bgImageUrl})` : undefined}>
   <TopToolbar
     {analysisActive}
     {editMode}
     {showEngine2}
+    {isDark}
     onNewGame={() => newGame()}
     onPass={() => passMove()}
     onUndo={() => undoMove()}
@@ -196,6 +239,7 @@
     onSaveSgf={() => {}}
     onToggleEdit={() => editMode = !editMode}
     onToggleEngine2={() => showEngine2 = !showEngine2}
+    onToggleTheme={toggleTheme}
     onToggleSettings={() => {}}
   />
 
@@ -213,85 +257,98 @@
           {:else}
             <div class="loading">Loading...</div>
           {/if}
-
           {#if !isTauri}
             <div class="browser-notice">Browser preview (no engine)</div>
           {/if}
         </div>
       {/snippet}
+
       {#snippet rightContent()}
         <div class="right-panel">
-          <div class="panel-scroll">
-            {#if error}
-              <div class="error-bar">{error}</div>
-            {/if}
+          {#if error}
+            <div class="error-bar">{error}</div>
+          {/if}
 
+          <!-- TOP ZONE: Engine panels (auto height) -->
+          <div class="rp-top">
             <EnginePanel status={engineStatus} {analysis} />
-
             {#if showEngine2}
               <EnginePanel status={engine2Status} analysis={analysis2} compact={true} />
             {/if}
+          </div>
 
-            <!-- Policy Heatmap placeholder -->
-            <div class="panel-card policy-panel">
-              <div class="policy-header">
-                <span class="panel-title">Policy Heatmap</span>
-                <button class="icon-btn" title="Toggle">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                </button>
-              </div>
-              <div class="policy-body">
-                <div class="mini-board">
+          <!-- MAIN ZONE: two-column layout that fills remaining space -->
+          <div class="rp-main">
+            <!-- Left: Winrate graph (grows) + Move list -->
+            <div class="rp-col-left">
+              {#if winrateHistory.length > 0}
+                <div class="graph-container">
+                  <WinrateGraph {winrateHistory} onNavigate={gotoMove} currentMove={board?.move_number ?? 0} />
+                </div>
+              {:else}
+                <div class="graph-container panel-card placeholder">
+                  <span class="placeholder-text">Winrate graph — start an engine</span>
+                </div>
+              {/if}
+              {#if treePath.length > 0}
+                <div class="movelist-container">
+                  <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoMove} />
+                </div>
+              {/if}
+            </div>
+
+            <!-- Right: Mini board + Comment sidebar -->
+            <div class="rp-col-right">
+              <div class="sidebar-card preview-card">
+                <div class="sb-header">
+                  <span class="panel-title">Preview</span>
+                </div>
+                <div class="sb-body sb-body-preview" style:width={`${previewSize}px`} style:height={`${previewSize}px`} style:position="relative">
                   {#if board}
-                    <BoardCanvas {board} analysis={null} onCellClick={() => {}} boardPx={140} />
+                    <BoardCanvas {board} analysis={null} onCellClick={() => {}} boardPx={previewSize} />
+                    <!-- 右下角拖动手柄 -->
+                    <div
+                      class="resize-corner"
+                      onmousedown={(e) => startResizePreview(e)}
+                      tabindex="0"
+                      role="slider"
+                      aria-label="Resize preview board"
+                      aria-valuenow={previewSize}
+                      aria-valuemin={120}
+                      aria-valuemax={380}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </div>
+                  {:else}
+                    <div class="sb-empty">No board</div>
                   {/if}
                 </div>
               </div>
-            </div>
 
-            {#if winrateHistory.length > 0}
-              <WinrateGraph {winrateHistory} onNavigate={gotoMove} currentMove={board?.move_number ?? 0} />
-            {:else}
-              <div class="panel-card placeholder">
-                <span class="placeholder-text">Winrate graph</span>
-              </div>
-            {/if}
-
-            {#if treePath.length > 0}
-              <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoMove} />
-            {/if}
-
-            <div class="panel-card comment-panel">
-              <div class="comment-header">
-                <span class="panel-title">Comment</span>
-                <div class="comment-actions">
-                  <button class="icon-btn" title="Bold"><b>B</b></button>
-                  <button class="icon-btn" title="Italic"><i>I</i></button>
-                  <button class="icon-btn" title="Underline"><u>U</u></button>
-                  <button class="icon-btn" title="Bullet list">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  </button>
-                  <button class="icon-btn" title="Numbered list">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
-                  </button>
-                  <button class="icon-btn" title="Link">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                  </button>
-                  <button class="icon-btn" title="Image">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                  </button>
+              <div class="sidebar-card sb-comment">
+                <div class="sb-header">
+                  <span class="panel-title">Comment</span>
+                  <div class="comment-actions">
+                    <button class="icon-btn" title="Bold"><b>B</b></button>
+                    <button class="icon-btn" title="Italic"><i>I</i></button>
+                    <button class="icon-btn" title="Link">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="comment-body">
-                {#if board && board.move_number > 0}
-                  <p class="comment-move">Move {board.move_number} ({board.current_player === 'BLACK' ? 'Black' : 'White'} to play)</p>
-                {/if}
-                <p class="comment-text">{comment || 'No comment'}</p>
-              </div>
-              <div class="comment-tags">
-                <span class="tag">invasion</span>
-                <span class="tag">center</span>
-                <span class="tag">sente</span>
+                <div class="sb-body comment-scroll">
+                  {#if board && board.move_number > 0}
+                    <p class="comment-move">Move {board.move_number} ({board.current_player === 'BLACK' ? 'Black' : 'White'})</p>
+                  {/if}
+                  <p class="comment-text">{comment || 'No comment'}</p>
+                  <div class="comment-tags">
+                    <span class="tag">invasion</span>
+                    <span class="tag">center</span>
+                    <span class="tag">sente</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -315,6 +372,9 @@
     width: 100vw;
     height: 100vh;
     overflow: hidden;
+    background-color: transparent;
+    background-repeat: repeat;
+    background-position: 0 0;
   }
 
   .main-content {
@@ -329,7 +389,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 8px;
+    padding: 2px;
     position: relative;
     width: 100%;
     height: 100%;
@@ -337,8 +397,8 @@
   }
 
   .loading {
-    width: 570px;
-    height: 570px;
+    width: min(570px, 80vmin);
+    height: min(570px, 80vmin);
     background: var(--board-bg);
     border-radius: var(--radius-lg);
     display: flex;
@@ -361,31 +421,165 @@
     border: 1px solid var(--yellow);
   }
 
+  /* ========== RIGHT PANEL: Yzy-style layout ========== */
   .right-panel {
     flex: 1;
-    min-width: 0;
+    min-width: 260px;
     display: flex;
     flex-direction: column;
     border-left: 1px solid var(--border);
     background: var(--bg-primary);
+    overflow: hidden;
   }
 
-  .panel-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
+  /* Top zone: engine panels — natural height */
+  .rp-top {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
+    padding: 6px 8px 0;
   }
 
+  /* Main zone: fills ALL remaining vertical space */
+  .rp-main {
+    flex: 1;
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px 8px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Left column: graph + move list */
+  .rp-col-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .graph-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .graph-container.panel-card.placeholder {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .movelist-container {
+    flex-shrink: 0;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  /* Right column: sidebar */
+  .rp-col-right {
+    flex-shrink: 0;
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sb-header {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .sb-body {
+    padding: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    flex-shrink: 0;
+  }
+
+  /* Preview 棋盘：固定正方形大小 */
+  .preview-card .sb-body-preview {
+    padding: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+  .preview-card .sb-body-preview :global(canvas) {
+    display: block;
+  }
+
+  /* 右下角拖动手柄 */
+  .resize-corner {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    opacity: 0.4;
+    border-radius: 3px;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .resize-corner:hover {
+    opacity: 0.9;
+    background: rgba(128, 128, 128, 0.2);
+    color: var(--text-secondary);
+  }
+
+  .sb-empty {
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 20px 0;
+  }
+
+  .comment-scroll {
+    overflow-y: auto;
+    padding: 8px 10px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .sb-comment {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Shared styles */
   .error-bar {
     padding: 6px 10px;
+    margin: 6px 8px 0;
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid var(--red);
     border-radius: var(--radius-md);
     color: var(--red);
     font-size: 12px;
+    flex-shrink: 0;
   }
 
   .panel-card {
@@ -396,7 +590,6 @@
   }
 
   .placeholder {
-    height: 180px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -405,43 +598,6 @@
   .placeholder-text {
     color: var(--text-muted);
     font-size: 12px;
-  }
-
-  .policy-panel {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .policy-header {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .policy-body {
-    padding: 10px;
-    display: flex;
-    justify-content: center;
-  }
-
-  .mini-board :global(.board-canvas) {
-    border-radius: 6px;
-    box-shadow: none;
-  }
-
-  .comment-panel {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .comment-header {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
   }
 
   .panel-title {
@@ -474,10 +630,6 @@
     color: var(--text-secondary);
   }
 
-  .comment-body {
-    padding: 10px 12px;
-  }
-
   .comment-move {
     font-size: 12px;
     font-weight: 600;
@@ -495,7 +647,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 12px 10px;
+    margin-top: 8px;
   }
 
   .tag {

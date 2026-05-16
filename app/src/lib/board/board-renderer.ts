@@ -1,104 +1,232 @@
 import type { BoardState, StoneColor } from '../api/types';
 import { CoordinateSystem } from './coordinate-system';
 
-const BOARD_BG = '#D4A84B';
-const GRID_COLOR = '#4a3a1a';
-const STAR_COLOR = '#4a3a1a';
-const LABEL_COLOR = '#7a6a4a';
+// ===== 图片资源路径 (Yzy Fast 主题) =====
+const BOARD_IMG_URL = '/theme/board.jpg';
+const BLACK_STONE_URL = '/theme/black-stone.png';
+const WHITE_STONE_URL = '/theme/white-stone.png';
+const BACKGROUND_IMG_URL = '/theme/background.jpg';
 
-export function drawBoard(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
+// ===== 颜色常量 (Yzy 风格) =====
+// Yzy 直接用 Color.BLACK (纯黑) 画网格线
+const GRID_COLOR = '#2a1a05';
+const STAR_COLOR = '#2a1a05';
+const LABEL_COLOR = '#2a1a05';
+
+// ===== 缓存的图片对象 =====
+let cachedBoardImg: HTMLImageElement | null = null;
+let cachedBlackStone: HTMLImageElement | null = null;
+let cachedWhiteStone: HTMLImageElement | null = null;
+let cachedBackgroundImg: HTMLImageElement | null = null;
+
+// 缓存缩放后的棋子图片（避免每帧重绘）
+const stoneImageCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * 预加载所有图片资源（在组件 onMount 时调用一次即可）
+ */
+export async function preloadAssets(): Promise<void> {
+  const promises = [
+    loadImage(BOARD_IMG_URL).then(img => { cachedBoardImg = img; }),
+    loadImage(BLACK_STONE_URL).then(img => { cachedBlackStone = img; }),
+    loadImage(WHITE_STONE_URL).then(img => { cachedWhiteStone = img; }),
+    loadImage(BACKGROUND_IMG_URL).then(img => { cachedBackgroundImg = img; }),
+  ];
+  await Promise.all(promises);
+}
+
+/**
+ * 获取背景图片（供 App.svelte 等外部使用）
+ */
+export function getBackgroundImage(): HTMLImageElement | null {
+  return cachedBackgroundImg;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/**
+ * 获取指定尺寸的棋子图片（带缓存，避免重复创建 Canvas）
+ */
+function getScaledStone(isBlack: boolean, size: number): HTMLCanvasElement | undefined {
+  const srcImg = isBlack ? cachedBlackStone : cachedWhiteStone;
+  if (!srcImg) return undefined;
+
+  const cacheKey = `${isBlack}-${size}`;
+  let cached = stoneImageCache.get(cacheKey);
+
+  if (!cached || cached.width !== size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    // Yzy 用 SCALE_SMOOTH (双线性插值)
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(srcImg, 0, 0, size, size);
+    cached = canvas;
+    stoneImageCache.set(cacheKey, cached);
+  }
+
+  return cached;
+}
+
+export function drawBoard(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number = 1): void {
   drawBackground(ctx, board, coords);
-  drawGrid(ctx, board, coords);
-  drawStarPoints(ctx, board, coords);
-  drawCoordinates(ctx, board, coords);
-  drawStones(ctx, board, coords);
+  drawGrid(ctx, board, coords, dpr);
+  drawStarPoints(ctx, board, coords, dpr);
+  drawCoordinates(ctx, board, coords, dpr);
+  drawStones(ctx, board, coords, dpr);
 }
 
-function drawBackground(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
-  // Wood texture gradient
-  const grad = ctx.createLinearGradient(0, 0, coords.boardPx, coords.boardPx);
-  grad.addColorStop(0, '#D4A84B');
-  grad.addColorStop(0.5, '#CC9E3F');
-  grad.addColorStop(1, '#D4A84B');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, coords.boardPx, coords.boardPx);
+/**
+ * 绘制棋盘背景 — 使用 Yzy 的真实木纹图片
+ */
+function drawBackground(ctx: CanvasRenderingContext2D, _board: BoardState, coords: CoordinateSystem): void {
+  const { boardPx } = coords;
 
-  // Subtle wood grain lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.03)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < coords.boardPx; i += 12) {
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(coords.boardPx, i + Math.sin(i * 0.05) * 4);
-    ctx.stroke();
+  ctx.save(); // 隔离 drawImage 的状态污染
+  if (cachedBoardImg) {
+    // Yzy 的做法：用 TexturePaint 平铺木纹图
+    // Canvas 中直接拉伸绘制即可
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cachedBoardImg, 0, 0, boardPx, boardPx);
+  } else {
+    // 图片还没加载完时的 fallback 纯色
+    ctx.fillStyle = '#D9984D'; // Yzy pure-board-color
+    ctx.fillRect(0, 0, boardPx, boardPx);
   }
+  ctx.restore();
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
-  ctx.strokeStyle = GRID_COLOR;
-  ctx.lineWidth = 0.8;
+/**
+ * 绘制网格线 — 用 fillRect 画线（避免 stroke 在 DPR transform 下的渲染问题）
+ */
+function drawGrid(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number): void {
+  const { cellPx } = coords;
+  const size = board.size; // 从 board 获取尺寸，不是 coords（coords 里叫 boardSize）
 
-  for (let i = 0; i < board.size; i++) {
-    ctx.beginPath();
-    ctx.moveTo(coords.stoneX(0), coords.stoneY(i));
-    ctx.lineTo(coords.stoneX(board.size - 1), coords.stoneY(i));
-    ctx.stroke();
+  // Yzy: normalStroke = Math.max(1f, availableWidth / 750f)
+  //     borderStroke = Math.max(boardWidth > 560 ? 2f : 1f, availableWidth / 481f)
+  // 不乘 dpr！因为 fillRect 在 setTransform(dpr) 下坐标已被缩放，
+  // fillRect 的尺寸参数也是逻辑像素，会自动被 transform 缩放到物理像素
+  const normalLw = Math.max(0.7, cellPx / 55);
+  const borderLw = Math.max(1.1, cellPx / 28);
 
+  ctx.fillStyle = '#2a1a05';
+
+  for (let i = 1; i < size - 1; i++) {
+    // 横线（从左边距到右边距）
+    const y = coords.stoneY(i);
     ctx.beginPath();
-    ctx.moveTo(coords.stoneX(i), coords.stoneY(0));
-    ctx.lineTo(coords.stoneX(i), coords.stoneY(board.size - 1));
-    ctx.stroke();
+    ctx.rect(coords.marginLeft, y - normalLw / 2, coords.boardPx - coords.marginLeft - coords.marginRight, normalLw);
+    ctx.fill();
+    // 竖线（从上边距到下边距）
+    const x = coords.stoneX(i);
+    ctx.beginPath();
+    ctx.rect(x - normalLw / 2, coords.marginTop, normalLw, coords.boardPx - coords.marginTop - coords.marginBottom);
+    ctx.fill();
   }
+
+  // 边框加粗
+  const bw = borderLw;
+  const last = size - 1;
+  const x0 = coords.stoneX(0), y0 = coords.stoneY(0);
+  const xLast = coords.stoneX(last), yLast = coords.stoneY(last);
+    ctx.fillRect(x0, y0 - bw / 2, xLast - x0, bw + 0.5);
+    ctx.fillRect(x0, yLast - bw / 2, xLast - x0, bw + 0.5);
+    ctx.fillRect(x0 - bw / 2, y0, bw + 0.5, yLast - y0);
+    ctx.fillRect(xLast - bw / 2, y0, bw + 0.5, yLast - y0);
 }
 
-function drawStarPoints(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
+/**
+ * 绘制星位
+ */
+function drawStarPoints(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number): void {
   ctx.fillStyle = STAR_COLOR;
+  // 星位半径也受 DPR 影响（fillCircle 不像 stroke 那样敏感，但保持一致）
+  const starR = Math.max(2.5, coords.cellPx * 0.12);
+
   for (let x = 0; x < board.size; x++) {
     for (let y = 0; y < board.size; y++) {
       if (coords.isStarPoint(x, y)) {
         ctx.beginPath();
-        ctx.arc(coords.stoneX(x), coords.stoneY(y), coords.cellPx * 0.15, 0, Math.PI * 2);
+        ctx.arc(coords.stoneX(x), coords.stoneY(y), starR, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 }
 
-function drawCoordinates(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
+/**
+ * 绘制坐标标签
+ */
+function drawCoordinates(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, _dpr: number): void {
   ctx.fillStyle = LABEL_COLOR;
-  ctx.font = `${Math.max(9, coords.cellPx * 0.28)}px sans-serif`;
+  // 字体大小 — 在 setTransform(dpr) 下 fillText 的坐标已被缩放，
+  // 但字体大小是以 CSS 像素为单位的，需要 * dpr 才能保持正确物理大小
+  // 然而观察发现坐标太大了，说明之前 * dpr 是对的但数值基数太大
+  // 用一个合理的基准值
+  const fontSize = Math.max(10, coords.stoneRadius() * 0.55);
+  ctx.font = `${fontSize}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const labelMargin = coords.margin * 0.5;
+  const labelMarginTop = coords.marginTop * 0.45;
+  const labelMarginBottom = coords.marginBottom * 0.45;
+  const labelMarginLeft = coords.marginLeft * 0.42;
+  const labelMarginRight = coords.marginRight * 0.42;
 
   // Top and bottom column labels (A-T, skip I)
   for (let x = 0; x < board.size; x++) {
     let col = x;
-    if (x >= 8) col += 1; // skip I
+    if (x >= 8) col += 1;
     const letter = String.fromCharCode('A'.charCodeAt(0) + col);
-
-    ctx.fillText(letter, coords.stoneX(x), labelMargin);
-    ctx.fillText(letter, coords.stoneX(x), coords.boardPx - labelMargin);
+    ctx.fillText(letter, coords.stoneX(x), labelMarginTop);
+    ctx.fillText(letter, coords.stoneX(x), coords.boardPx - labelMarginBottom);
   }
 
-  // Left and right row labels (19, 18, ..., 1)
+  // Left and right row labels
   for (let y = 0; y < board.size; y++) {
     const rowNum = board.size - y;
-    ctx.textAlign = 'center';
-    ctx.fillText(String(rowNum), labelMargin, coords.stoneY(y));
-    ctx.fillText(String(rowNum), coords.boardPx - labelMargin, coords.stoneY(y));
+    ctx.fillText(String(rowNum), labelMarginLeft, coords.stoneY(y));
+    ctx.fillText(String(rowNum), coords.boardPx - labelMarginRight, coords.stoneY(y));
   }
 }
 
-function drawStones(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
+/**
+ * 绘制所有棋子 — 使用 Yzy 的真实 PNG 图片
+ */
+function drawStones(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number): void {
+  const r = coords.stoneRadius();
+  const stoneSize = Math.round(r * 2) + 1;
+
   for (let y = 0; y < board.size; y++) {
     for (let x = 0; x < board.size; x++) {
       const stone = board.stones[y][x];
-      if (stone === 'BLACK') {
-        drawBlackStone(ctx, coords.stoneX(x), coords.stoneY(y), coords.stoneRadius());
-      } else if (stone === 'WHITE') {
-        drawWhiteStone(ctx, coords.stoneX(x), coords.stoneY(y), coords.stoneRadius());
+      if (stone === 'BLACK' || stone === 'WHITE') {
+        const cx = coords.stoneX(x);
+        const cy = coords.stoneY(y);
+        const isBlack = stone === 'BLACK';
+
+        // 绘制阴影（Yzy 双层 RadialGradientPaint 风格）
+        drawShadow(ctx, cx, cy, r, isBlack);
+
+        // 绘制棋子图片
+        const stoneImg = getScaledStone(isBlack, stoneSize);
+        if (stoneImg) {
+          ctx.drawImage(stoneImg, Math.round(cx - r), Math.round(cy - r));
+        } else {
+          // 图片未加载时的 fallback
+          drawFallbackStone(ctx, cx, cy, r, isBlack);
+        }
       }
     }
   }
@@ -109,55 +237,81 @@ function drawStones(ctx: CanvasRenderingContext2D, board: BoardState, coords: Co
     const stone = board.stones[ly][lx];
     const cx = coords.stoneX(lx);
     const cy = coords.stoneY(ly);
-
-    // Square marker for last move
-    const s = coords.cellPx * 0.14;
-    ctx.fillStyle = stone === 'BLACK' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.7)';
+    const s = coords.cellPx * 0.13; // last move marker — 填充不受 dpr 影响因为 fillRect 也被 transform 缩放
+    ctx.fillStyle = stone === 'BLACK' ? 'rgba(255,255,255,0.9)' : 'rgba(20,20,20,0.75)';
     ctx.fillRect(cx - s, cy - s, s * 2, s * 2);
   }
 }
 
-function drawBlackStone(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-  // Shadow
+/**
+ * Yzy 风格双层阴影
+ *
+ * 对应 BoardRenderer.java 中:
+ *   - TOP_GRADIENT_PAINT: RadialGradientPaint(center, radius, [transparent→gray→transparent])
+ *   - LOWER_RIGHT_GRADIENT_PAINT: 偏移的第二层阴影
+ */
+function drawShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, _isBlack: boolean): void {
+  // Yzy shadowSize 默认 85, cachedR = stoneRadius * 85 / 100
+  const shadowR = r * 0.85;
+  const offset = r * 0.14;
+
+  // 主阴影层（对应 Yzy TOP_GRADIENT_PAINT）
+  const shGrad1 = ctx.createRadialGradient(
+    cx + offset, cy + offset, shadowR * 0.3,
+    cx + offset, cy + offset, shadowR
+  );
+  shGrad1.addColorStop(0, 'rgba(50,50,50,0.55)');
+  shGrad1.addColorStop(0.6, 'rgba(30,30,30,0.25)');
+  shGrad1.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
-  ctx.arc(cx + 1.5, cy + 1.5, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.arc(cx + offset * 0.8, cy + offset * 0.8, shadowR, 0, Math.PI * 2);
+  ctx.fillStyle = shGrad1;
   ctx.fill();
 
-  // Stone with radial gradient
-  const gradient = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
-  gradient.addColorStop(0, '#666');
-  gradient.addColorStop(0.5, '#333');
-  gradient.addColorStop(1, '#111');
+  // 右下角次级阴影（对应 Yzy LOWER_RIGHT_GRADIENT_PAINT）
+  const farOffset = offset * 0.85;
+  const farR = shadowR * 0.9;
+  const shGrad2 = ctx.createRadialGradient(
+    cx + offset + farOffset, cy + offset + farOffset, farR * 0.6,
+    cx + offset + farOffset, cy + offset + farOffset, farR
+  );
+  shGrad2.addColorStop(0, 'rgba(0,0,0,0.45)');
+  shGrad2.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
+  ctx.arc(cx + offset + farOffset * 0.6, cy + offset + farOffset * 0.6, farR, 0, Math.PI * 2);
+  ctx.fillStyle = shGrad2;
   ctx.fill();
 }
 
-function drawWhiteStone(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-  // Shadow
-  ctx.beginPath();
-  ctx.arc(cx + 1.5, cy + 1.5, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fill();
+/**
+ * Fallback 棋子（图片未加载时使用）
+ * 对应 Yzy 的 drawStoneSimple 方法
+ */
+function drawFallbackStone(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, isBlack: boolean): void {
+  drawShadow(ctx, cx, cy, r, isBlack);
 
-  // Stone with radial gradient
-  const gradient = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
-  gradient.addColorStop(0, '#fff');
-  gradient.addColorStop(0.7, '#eee');
-  gradient.addColorStop(1, '#ccc');
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
+  if (isBlack) {
+    ctx.fillStyle = '#000000';
+  } else {
+    ctx.fillStyle = '#FFFFFF';
+  }
   ctx.fill();
 
-  // Subtle border
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-  ctx.lineWidth = 0.5;
-  ctx.stroke();
+  // Yzy drawStoneSimple: 白棋画边框
+  if (!isBlack) {
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.max(r / 16, 1);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
+/**
+ * 绘制悬停预览
+ */
 export function drawHoverPreview(
   ctx: CanvasRenderingContext2D,
   coords: CoordinateSystem,
@@ -168,11 +322,20 @@ export function drawHoverPreview(
   const cx = coords.stoneX(x);
   const cy = coords.stoneY(y);
   const r = coords.stoneRadius();
+  const isBlack = player === 'BLACK';
 
-  ctx.globalAlpha = 0.35;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = player === 'BLACK' ? '#222' : '#f0f0f0';
-  ctx.fill();
+  // 尝试用半透明棋子图片
+  const stoneSize = Math.round(r * 2) + 1;
+  const stoneImg = getScaledStone(isBlack, stoneSize);
+
+  ctx.globalAlpha = 0.38;
+  if (stoneImg) {
+    ctx.drawImage(stoneImg, Math.round(cx - r), Math.round(cy - r));
+  } else {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = isBlack ? '#222' : '#f0f0f0';
+    ctx.fill();
+  }
   ctx.globalAlpha = 1.0;
 }
