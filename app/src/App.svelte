@@ -1,232 +1,231 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
-
-  interface BoardState {
-    size: number;
-    stones: string[][];
-    current_player: string;
-    move_number: number;
-    last_move: [number, number] | null;
-    black_captures: number;
-    white_captures: number;
-    komi: number;
-  }
-
-  let board: BoardState | null = $state(null);
-  let error: string = $state('');
-  let hoverPos: [number, number] | null = $state(null);
+  import BoardCanvas from './lib/board/BoardCanvas.svelte';
+  import EnginePanel from './lib/panels/EnginePanel.svelte';
+  import WinrateGraph from './lib/charts/WinrateGraph.svelte';
+  import { TauriClient } from './lib/api/tauri-client';
+  import type { BoardState, EngineStatus, AnalysisData, WinratePoint } from './lib/api/types';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const api = isTauri ? new TauriClient() : null;
+
+  let board: BoardState | null = $state(null);
+  let engineStatus: EngineStatus = $state({
+    running: false, loaded: false, pondering: false, thinking: false,
+    name: '', engine_type: { is_katago: false, is_sai: false, is_leela: false, is_sayuri: false, is_zen: false },
+    total_playouts: 0,
+  });
+  let analysis: AnalysisData | null = $state(null);
+  let winrateHistory: WinratePoint[] = $state([]);
+  let error: string = $state('');
+  let editMode: boolean = $state(false);
+  let editIsBlack: boolean = $state(true);
 
   async function fetchBoard() {
-    if (!isTauri) {
-      // Mock data for browser preview
-      board = mockBoard();
-      return;
-    }
+    if (!api) { board = mockBoard(); return; }
     try {
-      board = await invoke<BoardState>('get_board');
+      board = await api.getBoard();
       error = '';
-    } catch (e) {
-      error = String(e);
-    }
+    } catch (e) { error = String(e); }
   }
 
-  async function clickCell(x: number, y: number) {
-    if (!isTauri) {
-      mockPlace(x, y);
-      return;
-    }
+  async function placeMove(x: number, y: number) {
+    if (!api || !board) return;
     try {
-      board = await invoke<BoardState>('place_move', { x, y });
+      board = await api.placeMove(x, y);
       error = '';
     } catch (e) {
+      // Illegal move — just ignore
       error = String(e);
     }
   }
 
   async function passMove() {
-    if (!isTauri) return;
+    if (!api) return;
+    try { board = await api.passMove(); error = ''; } catch (e) { error = String(e); }
+  }
+
+  async function undoMove() {
+    if (!api) return;
     try {
-      board = await invoke<BoardState>('pass_move');
+      board = await api.undoMove();
       error = '';
-    } catch (e) {
-      error = String(e);
+    } catch (e) { error = String(e); }
+  }
+
+  async function nextMove() {
+    if (!api) return;
+    try {
+      board = await api.nextMove();
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function previousMove() {
+    if (!api) return;
+    try {
+      board = await api.previousMove();
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function newGame(size?: number) {
+    if (!api) { board = mockBoard(); return; }
+    try { board = await api.newGame(size); winrateHistory = []; error = ''; } catch (e) { error = String(e); }
+  }
+
+  async function gotoMove(moveNumber: number) {
+    if (!api) return;
+    try { board = await api.gotoMove(moveNumber); error = ''; } catch (e) { error = String(e); }
+  }
+
+  function handleCellClick(x: number, y: number) {
+    if (!board) return;
+    if (editMode) {
+      if (board.stones[y][x] !== 'EMPTY') {
+        // Remove existing stone in edit mode
+        if (api) {
+          api.removeStone(x, y).then(b => { board = b; }).catch(e => { error = String(e); });
+        }
+      } else {
+        // Add stone in edit mode
+        if (api) {
+          api.addStone(x, y, editIsBlack).then(b => { board = b; }).catch(e => { error = String(e); });
+        }
+      }
+    } else {
+      placeMove(x, y);
     }
   }
 
-  async function newGame() {
-    if (!isTauri) {
-      board = mockBoard();
-      return;
-    }
-    try {
-      board = await invoke<BoardState>('new_game');
-      error = '';
-    } catch (e) {
-      error = String(e);
-    }
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); undoMove(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); nextMove(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); previousMove(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); newGame(); }
+    else if (e.key === 'n' || e.key === 'N') { newGame(); }
+    else if (e.key === 'p' || e.key === 'P') { passMove(); }
+    else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoMove(); }
+  }
+
+  // Engine event handlers
+  function setupEngineListeners() {
+    if (!api) return;
+
+    api.onAnalysisUpdate((data: AnalysisData) => {
+      analysis = data;
+
+      // Update winrate point at current move number
+      if (board && data.best_moves.length > 0) {
+        const bestWr = data.best_moves[0].winrate;
+        const blackWr = board.current_player === 'BLACK' ? bestWr : 100 - bestWr;
+        const scoreMean = board.current_player === 'BLACK'
+          ? data.best_moves[0].score_mean
+          : -data.best_moves[0].score_mean;
+
+        const point = {
+          move_number: board.move_number,
+          black_winrate: blackWr,
+          score_mean: scoreMean,
+        };
+
+        // Replace or append: truncate after current move, then add
+        const currentMove = board!.move_number;
+        winrateHistory = [
+          ...winrateHistory.filter(p => p.move_number < currentMove),
+          point,
+        ];
+      }
+    });
+
+    api.onEngineIdentified((data) => {
+      engineStatus = { ...engineStatus, name: data.name, engine_type: data.engine_type, loaded: true };
+    });
+
+    api.onEngineExit(() => {
+      engineStatus = { ...engineStatus, running: false, loaded: false, pondering: false };
+    });
   }
 
   // Mock board for browser-only preview
   function mockBoard(): BoardState {
     const size = 19;
-    const stones: string[][] = Array.from({ length: size }, () => Array(size).fill('EMPTY'));
-    return { size, stones, current_player: 'BLACK', move_number: 0, last_move: null, black_captures: 0, white_captures: 0, komi: 6.5 };
-  }
-
-  function mockPlace(x: number, y: number) {
-    if (!board) return;
-    const stones = board.stones.map(row => [...row]);
-    stones[y][x] = board.current_player;
-    board = {
-      ...board,
-      stones,
-      current_player: board.current_player === 'BLACK' ? 'WHITE' : 'BLACK',
-      move_number: board.move_number + 1,
-      last_move: [x, y],
+    const stones: ('BLACK' | 'WHITE' | 'EMPTY')[][] = Array.from({ length: size }, () => Array(size).fill('EMPTY') as ('BLACK' | 'WHITE' | 'EMPTY')[]);
+    return {
+      size, stones, current_player: 'BLACK', move_number: 0,
+      last_move: null, black_captures: 0, white_captures: 0, komi: 6.5,
     };
   }
 
   onMount(() => {
     fetchBoard();
+    setupEngineListeners();
+    window.addEventListener('keydown', handleKeydown);
   });
-
-  const BOARD_PX = 570;
-  const MARGIN = 25;
-
-  function cellPx(): number {
-    if (!board) return 30;
-    return (BOARD_PX - 2 * MARGIN) / (board.size - 1);
-  }
-
-  function stoneX(x: number): number {
-    return MARGIN + x * cellPx();
-  }
-
-  function stoneY(y: number): number {
-    return MARGIN + y * cellPx();
-  }
-
-  function isStarPoint(x: number, y: number, size: number): boolean {
-    if (size === 19) {
-      const stars = [3, 9, 15];
-      return stars.includes(x) && stars.includes(y);
-    }
-    if (size === 13) {
-      const stars = [3, 6, 9];
-      return stars.includes(x) && stars.includes(y);
-    }
-    if (size === 9) {
-      const stars = [2, 4, 6];
-      return stars.includes(x) && stars.includes(y);
-    }
-    return false;
-  }
-
-  function isLastMove(x: number, y: number): boolean {
-    return board?.last_move?.[0] === x && board?.last_move?.[1] === y;
-  }
 </script>
 
 <main>
   <div class="container">
     <div class="board-area">
-      <svg width={BOARD_PX} height={BOARD_PX} class="board-svg">
-        <!-- Board background -->
-        <rect width={BOARD_PX} height={BOARD_PX} fill="#DCB35C" rx="4" />
-
-        {#if board}
-          <!-- Grid lines -->
-          {#each Array(board.size) as _, i}
-            <line
-              x1={MARGIN} y1={stoneY(i)}
-              x2={MARGIN + (board.size - 1) * cellPx()} y2={stoneY(i)}
-              stroke="#5a4a2a" stroke-width="0.7"
-            />
-            <line
-              x1={stoneX(i)} y1={MARGIN}
-              x2={stoneX(i)} y2={MARGIN + (board.size - 1) * cellPx()}
-              stroke="#5a4a2a" stroke-width="0.7"
-            />
-          {/each}
-
-          <!-- Star points -->
-          {#each Array(board.size) as _, x}
-            {#each Array(board.size) as _, y}
-              {#if isStarPoint(x, y, board.size)}
-                <circle cx={stoneX(x)} cy={stoneY(y)} r="3" fill="#5a4a2a" />
-              {/if}
-            {/each}
-          {/each}
-
-          <!-- Stones -->
-          {#each Array(board.size) as _, y}
-            {#each Array(board.size) as _, x}
-              {@const val = board.stones[y][x]}
-              {#if val === 'BLACK'}
-                <circle cx={stoneX(x)} cy={stoneY(y)} r={cellPx() * 0.45} fill="#111" />
-                {#if isLastMove(x, y)}
-                  <circle cx={stoneX(x)} cy={stoneY(y)} r={cellPx() * 0.12} fill="#fff" />
-                {/if}
-              {:else if val === 'WHITE'}
-                <circle cx={stoneX(x)} cy={stoneY(y)} r={cellPx() * 0.45} fill="#f0f0f0" stroke="#999" stroke-width="0.5" />
-                {#if isLastMove(x, y)}
-                  <circle cx={stoneX(x)} cy={stoneY(y)} r={cellPx() * 0.12} fill="#111" />
-                {/if}
-              {/if}
-            {/each}
-          {/each}
-
-          <!-- Hover preview -->
-          {#if hoverPos && board.stones[hoverPos[1]][hoverPos[0]] === 'EMPTY'}
-            <circle
-              cx={stoneX(hoverPos[0])} cy={stoneY(hoverPos[1])}
-              r={cellPx() * 0.45}
-              fill={board.current_player === 'BLACK' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'}
-            />
-          {/if}
-
-          <!-- Click targets -->
-          {#each Array(board.size) as _, y}
-            {#each Array(board.size) as _, x}
-              <rect
-                x={stoneX(x) - cellPx() / 2} y={stoneY(y) - cellPx() / 2}
-                width={cellPx()} height={cellPx()}
-                fill="transparent"
-                cursor="pointer"
-                onclick={() => clickCell(x, y)}
-                onmouseenter={() => hoverPos = [x, y]}
-                onmouseleave={() => hoverPos = null}
-              />
-            {/each}
-          {/each}
-        {/if}
-      </svg>
+      {#if board}
+        <BoardCanvas
+          {board}
+          {analysis}
+          onCellClick={handleCellClick}
+          boardPx={570}
+        />
+      {:else}
+        <div class="loading">Loading...</div>
+      {/if}
     </div>
 
     <div class="side-panel">
-      <h2>LizzieYzy Next</h2>
+      <h2>PonderGo</h2>
       {#if !isTauri}
         <p class="warn">Browser preview (no engine)</p>
       {/if}
+
       {#if board}
         <div class="info">
-          <p>Move: {board.move_number}</p>
-          <p>To play: {board.current_player === 'BLACK' ? '⚫ Black' : '⚪ White'}</p>
+          <p>Move: {board.move_number} | To play: {board.current_player === 'BLACK' ? '⚫ Black' : '⚪ White'}</p>
           {#if board.black_captures > 0 || board.white_captures > 0}
             <p>Captures: ⚫{board.black_captures} ⚪{board.white_captures}</p>
           {/if}
         </div>
       {/if}
+
       {#if error}
         <p class="error">{error}</p>
       {/if}
-      <div class="buttons">
-        <button onclick={passMove}>Pass</button>
-        <button onclick={newGame}>New Game</button>
-        <button onclick={fetchBoard}>Refresh</button>
+
+      <EnginePanel status={engineStatus} {analysis} />
+
+      {#if winrateHistory.length > 0}
+        <WinrateGraph winrateHistory={winrateHistory} onNavigate={gotoMove} />
+      {:else}
+        <div class="graph-placeholder">Winrate graph</div>
+      {/if}
+
+      <div class="controls">
+        <div class="buttons">
+          <button onclick={() => undoMove()}>← Undo</button>
+          <button onclick={() => nextMove()}>→ Next</button>
+          <button onclick={() => passMove()}>Pass</button>
+          <button onclick={() => newGame()}>New</button>
+        </div>
+        <div class="edit-toggle">
+          <button class:active={editMode} onclick={() => editMode = !editMode}>
+            {editMode ? '✏️ Editing' : '✏️ Edit'}
+          </button>
+          {#if editMode}
+            <button class:active={editIsBlack} onclick={() => editIsBlack = true}>⚫</button>
+            <button class:active={!editIsBlack} onclick={() => editIsBlack = false}>⚪</button>
+          {/if}
+        </div>
+      </div>
+
+      <div class="shortcuts">
+        <small>←→ Undo/Next | N New | P Pass | Ctrl+Z Undo</small>
       </div>
     </div>
   </div>
@@ -244,52 +243,91 @@
   }
   .container {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
     align-items: flex-start;
   }
-  .board-svg {
+  .board-area {
+    flex-shrink: 0;
+  }
+  .loading {
+    width: 570px;
+    height: 570px;
+    background: #DCB35C;
     border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #5a4a2a;
   }
   .side-panel {
     background: #16213e;
-    padding: 1.5rem 2rem;
+    padding: 1rem 1.2rem;
     border-radius: 12px;
-    min-width: 200px;
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
   }
   h2 {
-    margin: 0 0 1rem;
+    margin: 0;
     color: #fff;
+    font-size: 1.2rem;
   }
   .info p {
-    margin: 0.3rem 0;
-    font-size: 1rem;
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
   }
   .warn {
     color: #fbbf24;
     font-size: 0.85rem;
-    margin: 0.5rem 0;
+    margin: 0.3rem 0;
   }
   .error {
     color: #f87171;
-    font-size: 0.9rem;
-    margin: 0.5rem 0;
+    font-size: 0.85rem;
+    margin: 0.3rem 0;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
   .buttons {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    gap: 0.4rem;
+  }
+  .edit-toggle {
+    display: flex;
+    gap: 0.4rem;
   }
   button {
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     border: none;
     border-radius: 6px;
     background: #0f3460;
     color: #e0e0e0;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    transition: background 0.15s;
   }
   button:hover {
     background: #1a5276;
+  }
+  button.active {
+    background: #007fff;
+  }
+  .shortcuts small {
+    color: #888;
+    font-size: 0.7rem;
+  }
+  .graph-placeholder {
+    height: 200px;
+    background: #16213e;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 0.85rem;
   }
 </style>

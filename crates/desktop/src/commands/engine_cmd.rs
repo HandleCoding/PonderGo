@@ -79,8 +79,12 @@ impl EngineListener for TauriEngineListener {
         let _ = self.app_handle.emit("engine:analysis", &data);
     }
 
-    fn on_genmove(&self, _color: &str, coord: &str) {
-        let _ = self.app_handle.emit("engine:genmove", coord);
+    fn on_genmove(&self, color: &str, coord: &str) {
+        let info = GenmoveInfo {
+            color: color.to_string(),
+            coord: coord.to_string(),
+        };
+        let _ = self.app_handle.emit("engine:genmove", &info);
     }
 
     fn on_engine_identified(&self, name: &str, engine_type: &EngineType) {
@@ -100,6 +104,12 @@ impl EngineListener for TauriEngineListener {
 struct EngineIdentifiedInfo {
     name: String,
     engine_type: EngineTypeInfo,
+}
+
+#[derive(Serialize)]
+struct GenmoveInfo {
+    color: String,
+    coord: String,
 }
 
 // ---------------------------------------------------------------------------
