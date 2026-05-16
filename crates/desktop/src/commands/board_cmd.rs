@@ -1,8 +1,8 @@
 use tauri::State;
-use lizzie_core::go::board::{Board, BoardState, PlaceResult};
-use lizzie_core::go::board_history::BoardHistoryList;
-use lizzie_core::go::coord_to_name;
-use lizzie_core::go::stone::Stone;
+use ponder_core::go::board::{Board, BoardState, PlaceResult};
+use ponder_core::go::board_history::BoardHistoryList;
+use ponder_core::go::coord_to_name;
+use ponder_core::go::stone::Stone;
 use crate::AppState;
 
 /// Helper: lock board and history in consistent order (board first, then history).

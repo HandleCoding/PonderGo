@@ -1,6 +1,6 @@
 [package]
-name = "lizzie-desktop"
-description = "LizzieYzy desktop app (Tauri)"
+name = "ponder-desktop"
+description = "PonderGo desktop app (Tauri)"
 version.workspace = true
 edition.workspace = true
 
@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.1", features = [] }
 
 [dependencies]
-lizzie-core = { path = "../core" }
+ponder-core = { path = "../core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

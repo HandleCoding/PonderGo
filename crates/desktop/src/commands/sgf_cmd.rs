@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use lizzie_core::go::board::Board;
-use lizzie_core::go::sgf;
+use ponder_core::go::board::Board;
+use ponder_core::go::sgf;
 use crate::AppState;
 
 #[derive(Serialize)]

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
-use lizzie_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
-use lizzie_core::engine::move_data::MoveData;
+use ponder_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
+use ponder_core::engine::move_data::MoveData;
 use crate::AppState;
 
 // ---------------------------------------------------------------------------

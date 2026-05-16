@@ -1,5 +1,5 @@
 [package]
-name = "lizzie-core"
+name = "ponder-core"
 description = "Core Go game logic, SGF parsing, and GTP engine communication"
 version.workspace = true
 edition.workspace = true

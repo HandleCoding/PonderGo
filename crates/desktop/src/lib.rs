@@ -2,9 +2,9 @@ mod commands;
 
 use std::sync::Mutex;
 use commands::{board_cmd, engine_cmd, sgf_cmd};
-use lizzie_core::go::board::Board;
-use lizzie_core::go::board_history::BoardHistoryList;
-use lizzie_core::engine::gtp::GtpEngine;
+use ponder_core::go::board::Board;
+use ponder_core::go::board_history::BoardHistoryList;
+use ponder_core::engine::gtp::GtpEngine;
 
 pub struct AppState {
     pub board: Mutex<Board>,

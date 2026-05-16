@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "LizzieYzy",
+  "productName": "PonderGo",
   "version": "0.1.0",
-  "identifier": "com.lizzieyzy.next",
+  "identifier": "com.pondergo.app",
   "build": {
     "frontendDist": "../../app/dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LizzieYzy",
+        "title": "PonderGo",
         "width": 1280,
         "height": 800,
         "resizable": true,
