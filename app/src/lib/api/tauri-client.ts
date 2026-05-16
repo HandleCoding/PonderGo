@@ -122,4 +122,45 @@ export class TauriClient implements ApiClient {
   async nextVariation(index: number): Promise<BoardState> {
     return invoke<BoardState>('next_variation', { index });
   }
+
+  // Engine 2 (dual-engine)
+  async startEngine2(request: StartEngineRequest): Promise<void> {
+    return invoke('start_engine2', { request });
+  }
+
+  async stopEngine2(): Promise<void> {
+    return invoke('stop_engine2');
+  }
+
+  async getEngine2Status(): Promise<EngineStatus> {
+    return invoke<EngineStatus>('get_engine2_status');
+  }
+
+  async getAnalysis2(): Promise<AnalysisData> {
+    return invoke<AnalysisData>('get_analysis2');
+  }
+
+  onAnalysis2Update(callback: (data: AnalysisData) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<AnalysisData>('engine2:analysis', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
+
+  onEngine2Identified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<{ name: string; engine_type: EngineStatus['engine_type'] }>('engine2:identified', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
+
+  onEngine2Exit(callback: (normal: boolean) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<boolean>('engine2:exit', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
 }

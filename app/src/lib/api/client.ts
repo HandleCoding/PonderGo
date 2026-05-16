@@ -32,6 +32,15 @@ export interface ApiClient {
   onEngineExit(callback: (normal: boolean) => void): () => void;
   onGenmove(callback: (color: string, coord: string) => void): () => void;
 
+  // Engine 2 (dual-engine)
+  startEngine2(request: StartEngineRequest): Promise<void>;
+  stopEngine2(): Promise<void>;
+  getEngine2Status(): Promise<EngineStatus>;
+  getAnalysis2(): Promise<AnalysisData>;
+  onAnalysis2Update(callback: (data: AnalysisData) => void): () => void;
+  onEngine2Identified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;
+  onEngine2Exit(callback: (normal: boolean) => void): () => void;
+
   // SGF
   loadSgf(content: string): Promise<SgfResult>;
   saveSgf(): Promise<SgfResult>;

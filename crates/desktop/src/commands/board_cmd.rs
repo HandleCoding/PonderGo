@@ -6,7 +6,6 @@ use ponder_core::go::stone::Stone;
 use crate::AppState;
 
 /// Helper: lock board and history in consistent order (board first, then history).
-/// This prevents deadlocks across all commands.
 macro_rules! lock_board_history {
     ($state:expr) => {{
         let board = $state.board.lock().unwrap_or_else(|e| e.into_inner());
@@ -15,11 +14,51 @@ macro_rules! lock_board_history {
     }};
 }
 
-/// Helper: acquire engine lock with poison recovery.
-macro_rules! lock_engine {
-    ($state:expr) => {{
-        $state.engine.lock().unwrap_or_else(|e| e.into_inner())
-    }};
+/// Send play_move to both engines.
+fn sync_play_both(state: &AppState, color: &str, coord: &str) {
+    let engine1 = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine1 {
+        engine.play_move(color, coord);
+    }
+    drop(engine1);
+    let engine2 = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine2 {
+        engine.play_move(color, coord);
+    }
+}
+
+/// Send undo to both engines.
+fn sync_undo_both(state: &AppState) {
+    let engine1 = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine1 {
+        engine.undo();
+    }
+    drop(engine1);
+    let engine2 = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine2 {
+        engine.undo();
+    }
+}
+
+/// Rebuild both engines' board state by clearing and replaying all moves.
+fn sync_replay_both(state: &AppState, board_size: usize, moves: &[(String, String)]) {
+    let engine1 = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine1 {
+        engine.boardsize(board_size);
+        engine.clear_board();
+        for (color, coord) in moves {
+            engine.play_move(color, coord);
+        }
+    }
+    drop(engine1);
+    let engine2 = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine2 {
+        engine.boardsize(board_size);
+        engine.clear_board();
+        for (color, coord) in moves {
+            engine.play_move(color, coord);
+        }
+    }
 }
 
 #[tauri::command]
@@ -42,10 +81,7 @@ pub fn place_move(x: usize, y: usize, state: State<AppState>) -> Result<BoardSta
             let coord = coord_to_name(x, y, board_size);
             drop(board);
             drop(history);
-            let engine_guard = lock_engine!(state);
-            if let Some(ref engine) = *engine_guard {
-                engine.play_move(color, &coord);
-            }
+            sync_play_both(&state, color, &coord);
             Ok(board_state)
         }
         PlaceResult::IllegalOccupied => Err("Illegal move: occupied".to_string()),
@@ -62,10 +98,7 @@ pub fn pass_move(state: State<AppState>) -> BoardState {
     let board_state = board.to_state();
     drop(board);
     drop(history);
-    let engine_guard = lock_engine!(state);
-    if let Some(ref engine) = *engine_guard {
-        engine.play_move(color, "pass");
-    }
+    sync_play_both(&state, color, "pass");
     board_state
 }
 
@@ -79,10 +112,7 @@ pub fn undo_move(state: State<AppState>) -> Result<BoardState, String> {
             let board_state = board.to_state();
             drop(board);
             drop(history);
-            let engine_guard = lock_engine!(state);
-            if let Some(ref engine) = *engine_guard {
-                engine.undo();
-            }
+            sync_undo_both(&state);
             Ok(board_state)
         }
         None => Err("No previous move".to_string()),
@@ -96,7 +126,13 @@ pub fn next_move(state: State<AppState>) -> Result<BoardState, String> {
         Some(_data) => {
             let data = history.get_data();
             *board = Board::from_data(&data);
-            Ok(board.to_state())
+            let board_size = board.size;
+            let moves = history.moves_to_head();
+            let board_state = board.to_state();
+            drop(board);
+            drop(history);
+            sync_replay_both(&state, board_size, &moves);
+            Ok(board_state)
         }
         None => Err("No next move".to_string()),
     }
@@ -113,7 +149,13 @@ pub fn goto_move(move_number: usize, state: State<AppState>) -> Result<BoardStat
     if history.go_to_move_number(move_number) {
         let data = history.get_data();
         *board = Board::from_data(&data);
-        Ok(board.to_state())
+        let board_size = board.size;
+        let moves = history.moves_to_head();
+        let board_state = board.to_state();
+        drop(board);
+        drop(history);
+        sync_replay_both(&state, board_size, &moves);
+        Ok(board_state)
     } else {
         Err(format!("Cannot go to move {}", move_number))
     }
@@ -133,15 +175,7 @@ pub fn add_stone(x: usize, y: usize, is_black: bool, state: State<AppState>) -> 
     let board_size = board.size;
     drop(board);
     drop(history);
-    // Engine must be re-synced after edit mode changes
-    let engine_guard = lock_engine!(state);
-    if let Some(ref engine) = *engine_guard {
-        engine.boardsize(board_size);
-        engine.clear_board();
-        for (color, coord) in moves_to_replay {
-            engine.play_move(&color, &coord);
-        }
-    }
+    sync_replay_both(&state, board_size, &moves_to_replay);
     board_state
 }
 
@@ -158,14 +192,7 @@ pub fn remove_stone(x: usize, y: usize, state: State<AppState>) -> BoardState {
     let board_size = board.size;
     drop(board);
     drop(history);
-    let engine_guard = lock_engine!(state);
-    if let Some(ref engine) = *engine_guard {
-        engine.boardsize(board_size);
-        engine.clear_board();
-        for (color, coord) in moves_to_replay {
-            engine.play_move(&color, &coord);
-        }
-    }
+    sync_replay_both(&state, board_size, &moves_to_replay);
     board_state
 }
 
@@ -179,8 +206,14 @@ pub fn new_game(size: Option<usize>, state: State<AppState>) -> BoardState {
     let board_state = board.to_state();
     drop(board);
     drop(history);
-    let engine_guard = lock_engine!(state);
-    if let Some(ref engine) = *engine_guard {
+    let engine1 = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine1 {
+        engine.boardsize(board_size);
+        engine.clear_board();
+    }
+    drop(engine1);
+    let engine2 = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine2 {
         engine.boardsize(board_size);
         engine.clear_board();
     }

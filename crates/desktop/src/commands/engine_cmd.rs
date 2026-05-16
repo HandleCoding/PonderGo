@@ -113,6 +113,51 @@ struct GenmoveInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Second engine listener (emits engine2:* events)
+// ---------------------------------------------------------------------------
+
+struct TauriEngine2Listener {
+    app_handle: tauri::AppHandle,
+}
+
+impl TauriEngine2Listener {
+    fn new(app_handle: tauri::AppHandle) -> Self {
+        TauriEngine2Listener { app_handle }
+    }
+}
+
+impl EngineListener for TauriEngine2Listener {
+    fn on_analysis(&self, analysis: EngineAnalysis) {
+        let data = AnalysisData {
+            best_moves: analysis.best_moves,
+            total_playouts: analysis.total_playouts,
+            ownership: analysis.ownership,
+        };
+        let _ = self.app_handle.emit("engine2:analysis", &data);
+    }
+
+    fn on_genmove(&self, color: &str, coord: &str) {
+        let info = GenmoveInfo {
+            color: color.to_string(),
+            coord: coord.to_string(),
+        };
+        let _ = self.app_handle.emit("engine2:genmove", &info);
+    }
+
+    fn on_engine_identified(&self, name: &str, engine_type: &EngineType) {
+        let info = EngineIdentifiedInfo {
+            name: name.to_string(),
+            engine_type: EngineTypeInfo::from(engine_type),
+        };
+        let _ = self.app_handle.emit("engine2:identified", &info);
+    }
+
+    fn on_engine_exit(&self, normal: bool) {
+        let _ = self.app_handle.emit("engine2:exit", normal);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -226,5 +271,83 @@ impl Default for EngineStatus {
             engine_type: EngineTypeInfo::default(),
             total_playouts: 0,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Engine 2 commands (dual-engine mode)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn start_engine2(
+    request: StartEngineRequest,
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let mut engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+
+    if let Some(ref engine) = *engine_guard {
+        engine.shutdown();
+    }
+
+    let config = EngineConfig {
+        command: request.command,
+        initial_commands: request.initial_commands.unwrap_or_default(),
+        analyze_interval_cs: request.analyze_interval_cs.unwrap_or(10),
+        ..EngineConfig::default()
+    };
+
+    let mut engine = GtpEngine::new(config);
+    engine.add_listener(Box::new(TauriEngine2Listener::new(app_handle)));
+    engine.start()?;
+
+    *engine_guard = Some(engine);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_engine2(state: State<AppState>) -> Result<(), String> {
+    let mut engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine_guard {
+        engine.shutdown();
+        *engine_guard = None;
+        Ok(())
+    } else {
+        Err("No second engine running".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_engine2_status(state: State<AppState>) -> EngineStatus {
+    let engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    match engine_guard.as_ref() {
+        Some(engine) => {
+            let et = engine.engine_type();
+            EngineStatus {
+                running: engine.is_started(),
+                loaded: engine.is_loaded(),
+                pondering: engine.is_pondering(),
+                thinking: engine.is_thinking(),
+                name: engine.engine_name(),
+                engine_type: EngineTypeInfo::from(&et),
+                total_playouts: engine.total_playouts(),
+            }
+        }
+        None => EngineStatus::default(),
+    }
+}
+
+#[tauri::command]
+pub fn get_analysis2(state: State<AppState>) -> Result<AnalysisData, String> {
+    let engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    match engine_guard.as_ref() {
+        Some(engine) => {
+            Ok(AnalysisData {
+                best_moves: engine.best_moves(),
+                total_playouts: engine.total_playouts(),
+                ownership: Vec::new(),
+            })
+        }
+        None => Err("No second engine running".to_string()),
     }
 }

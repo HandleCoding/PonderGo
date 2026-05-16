@@ -44,6 +44,13 @@ export class HttpClient implements ApiClient {
   async saveSgf(): Promise<any> { throw new Error('Not implemented'); }
   async getTreePath(): Promise<any> { throw new Error('Not implemented'); }
   async nextVariation(_index: number): Promise<any> { throw new Error('Not implemented'); }
+  async startEngine2(_request: any): Promise<void> { throw new Error('Not implemented'); }
+  async stopEngine2(): Promise<void> { throw new Error('Not implemented'); }
+  async getEngine2Status(): Promise<any> { throw new Error('Not implemented'); }
+  async getAnalysis2(): Promise<any> { throw new Error('Not implemented'); }
+  onAnalysis2Update(_callback: (data: any) => void): () => void { return () => {}; }
+  onEngine2Identified(_callback: (data: any) => void): () => void { return () => {}; }
+  onEngine2Exit(_callback: (normal: boolean) => void): () => void { return () => {}; }
 }
 
 export function createClient(): ApiClient {

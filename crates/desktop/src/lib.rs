@@ -12,6 +12,7 @@ pub struct AppState {
     pub board: Mutex<Board>,
     pub history: Mutex<BoardHistoryList>,
     pub engine: Mutex<Option<GtpEngine>>,
+    pub engine2: Mutex<Option<GtpEngine>>,
     pub config: Mutex<AppConfig>,
     pub config_path: PathBuf,
 }
@@ -35,6 +36,7 @@ pub fn run() {
             board: Mutex::new(board),
             history: Mutex::new(history),
             engine: Mutex::new(None),
+            engine2: Mutex::new(None),
             config: Mutex::new(config),
             config_path: config_path,
         })
@@ -65,6 +67,10 @@ pub fn run() {
             engine_cmd::toggle_ponder,
             engine_cmd::genmove,
             engine_cmd::get_analysis,
+            engine_cmd::start_engine2,
+            engine_cmd::stop_engine2,
+            engine_cmd::get_engine2_status,
+            engine_cmd::get_analysis2,
             sgf_cmd::load_sgf,
             sgf_cmd::save_sgf,
             tree_cmd::get_tree_path,

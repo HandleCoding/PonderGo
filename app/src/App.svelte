@@ -16,12 +16,19 @@
     name: '', engine_type: { is_katago: false, is_sai: false, is_leela: false, is_sayuri: false, is_zen: false },
     total_playouts: 0,
   });
+  let engine2Status: EngineStatus = $state({
+    running: false, loaded: false, pondering: false, thinking: false,
+    name: '', engine_type: { is_katago: false, is_sai: false, is_leela: false, is_sayuri: false, is_zen: false },
+    total_playouts: 0,
+  });
   let analysis: AnalysisData | null = $state(null);
+  let analysis2: AnalysisData | null = $state(null);
   let winrateHistory: WinratePoint[] = $state([]);
   let treePath: TreeNode[] = $state([]);
   let error: string = $state('');
   let editMode: boolean = $state(false);
   let editIsBlack: boolean = $state(true);
+  let showEngine2: boolean = $state(false);
 
   async function fetchBoard() {
     if (!api) { board = mockBoard(); return; }
@@ -147,6 +154,19 @@
     api.onEngineExit(() => {
       engineStatus = { ...engineStatus, running: false, loaded: false, pondering: false };
     });
+
+    // Engine 2 listeners
+    api.onAnalysis2Update((data: AnalysisData) => {
+      analysis2 = data;
+    });
+
+    api.onEngine2Identified((data) => {
+      engine2Status = { ...engine2Status, name: data.name, engine_type: data.engine_type, loaded: true };
+    });
+
+    api.onEngine2Exit(() => {
+      engine2Status = { ...engine2Status, running: false, loaded: false, pondering: false };
+    });
   }
 
   // Mock board for browser-only preview
@@ -202,6 +222,10 @@
 
       <EnginePanel status={engineStatus} {analysis} />
 
+      {#if showEngine2}
+        <EnginePanel status={engine2Status} analysis={analysis2} />
+      {/if}
+
       {#if treePath.length > 0}
         <MoveList treePath={treePath} boardSize={board?.size ?? 19} onNavigate={gotoMove} />
       {/if}
@@ -222,6 +246,9 @@
         <div class="edit-toggle">
           <button class:active={editMode} onclick={() => editMode = !editMode}>
             {editMode ? '✏️ Editing' : '✏️ Edit'}
+          </button>
+          <button class:active={showEngine2} onclick={() => showEngine2 = !showEngine2}>
+            🔍 Dual
           </button>
           {#if editMode}
             <button class:active={editIsBlack} onclick={() => editIsBlack = true}>⚫</button>
