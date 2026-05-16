@@ -42,6 +42,8 @@ export class HttpClient implements ApiClient {
   onGenmove(_callback: (color: string, coord: string) => void): () => void { return () => {}; }
   async loadSgf(_content: string): Promise<any> { throw new Error('Not implemented'); }
   async saveSgf(): Promise<any> { throw new Error('Not implemented'); }
+  async getTreePath(): Promise<any> { throw new Error('Not implemented'); }
+  async nextVariation(_index: number): Promise<any> { throw new Error('Not implemented'); }
 }
 
 export function createClient(): ApiClient {

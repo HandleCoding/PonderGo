@@ -1,0 +1,1 @@
+export { default as MoveList } from './MoveList.svelte';

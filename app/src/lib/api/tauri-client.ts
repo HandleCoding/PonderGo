@@ -7,6 +7,7 @@ import type {
   AnalysisData,
   SgfResult,
   StartEngineRequest,
+  TreeNode,
 } from './types';
 
 export class TauriClient implements ApiClient {
@@ -112,5 +113,13 @@ export class TauriClient implements ApiClient {
 
   async saveSgf(): Promise<SgfResult> {
     return invoke<SgfResult>('save_sgf');
+  }
+
+  async getTreePath(): Promise<TreeNode[]> {
+    return invoke<TreeNode[]>('get_tree_path');
+  }
+
+  async nextVariation(index: number): Promise<BoardState> {
+    return invoke<BoardState>('next_variation', { index });
   }
 }

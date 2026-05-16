@@ -4,6 +4,7 @@ import type {
   AnalysisData,
   SgfResult,
   StartEngineRequest,
+  TreeNode,
 } from './types';
 
 export interface ApiClient {
@@ -34,4 +35,8 @@ export interface ApiClient {
   // SGF
   loadSgf(content: string): Promise<SgfResult>;
   saveSgf(): Promise<SgfResult>;
+
+  // Tree
+  getTreePath(): Promise<TreeNode[]>;
+  nextVariation(index: number): Promise<BoardState>;
 }

@@ -1,15 +1,19 @@
 mod commands;
 
 use std::sync::Mutex;
-use commands::{board_cmd, engine_cmd, sgf_cmd};
+use std::path::PathBuf;
+use commands::{board_cmd, engine_cmd, sgf_cmd, tree_cmd, config_cmd};
 use ponder_core::go::board::Board;
 use ponder_core::go::board_history::BoardHistoryList;
 use ponder_core::engine::gtp::GtpEngine;
+use ponder_core::config::AppConfig;
 
 pub struct AppState {
     pub board: Mutex<Board>,
     pub history: Mutex<BoardHistoryList>,
     pub engine: Mutex<Option<GtpEngine>>,
+    pub config: Mutex<AppConfig>,
+    pub config_path: PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,12 +22,21 @@ pub fn run() {
     let data = board.to_data();
     let history = BoardHistoryList::new(data);
 
+    // Config path: app data dir / pondergo / config.json
+    let config_path = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("pondergo")
+        .join("config.json");
+    let config = AppConfig::load(&config_path);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             board: Mutex::new(board),
             history: Mutex::new(history),
             engine: Mutex::new(None),
+            config: Mutex::new(config),
+            config_path: config_path,
         })
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -54,6 +67,10 @@ pub fn run() {
             engine_cmd::get_analysis,
             sgf_cmd::load_sgf,
             sgf_cmd::save_sgf,
+            tree_cmd::get_tree_path,
+            tree_cmd::next_variation,
+            config_cmd::get_config,
+            config_cmd::save_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -68,6 +68,15 @@ export interface StartEngineRequest {
   analyze_interval_cs?: number;
 }
 
+export interface TreeNode {
+  move_number: number;
+  last_move: [number, number] | null;
+  is_black: boolean;
+  comment: string;
+  variation_count: number;
+  is_current: boolean;
+}
+
 export interface WinratePoint {
   move_number: number;
   black_winrate: number;

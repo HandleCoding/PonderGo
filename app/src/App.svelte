@@ -3,8 +3,9 @@
   import BoardCanvas from './lib/board/BoardCanvas.svelte';
   import EnginePanel from './lib/panels/EnginePanel.svelte';
   import WinrateGraph from './lib/charts/WinrateGraph.svelte';
+  import MoveList from './lib/tree/MoveList.svelte';
   import { TauriClient } from './lib/api/tauri-client';
-  import type { BoardState, EngineStatus, AnalysisData, WinratePoint } from './lib/api/types';
+  import type { BoardState, EngineStatus, AnalysisData, WinratePoint, TreeNode } from './lib/api/types';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   const api = isTauri ? new TauriClient() : null;
@@ -17,6 +18,7 @@
   });
   let analysis: AnalysisData | null = $state(null);
   let winrateHistory: WinratePoint[] = $state([]);
+  let treePath: TreeNode[] = $state([]);
   let error: string = $state('');
   let editMode: boolean = $state(false);
   let editIsBlack: boolean = $state(true);
@@ -25,58 +27,58 @@
     if (!api) { board = mockBoard(); return; }
     try {
       board = await api.getBoard();
+      fetchTreePath();
       error = '';
     } catch (e) { error = String(e); }
+  }
+
+  async function updateBoard(fn: () => Promise<BoardState>) {
+    try {
+      board = await fn();
+      fetchTreePath();
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function fetchTreePath() {
+    if (!api) return;
+    try { treePath = await api.getTreePath(); } catch (_) { /* non-critical */ }
   }
 
   async function placeMove(x: number, y: number) {
     if (!api || !board) return;
-    try {
-      board = await api.placeMove(x, y);
-      error = '';
-    } catch (e) {
-      // Illegal move — just ignore
-      error = String(e);
-    }
+    try { board = await api.placeMove(x, y); fetchTreePath(); error = ''; }
+    catch (e) { error = String(e); }
   }
 
   async function passMove() {
     if (!api) return;
-    try { board = await api.passMove(); error = ''; } catch (e) { error = String(e); }
+    updateBoard(() => api!.passMove());
   }
 
   async function undoMove() {
     if (!api) return;
-    try {
-      board = await api.undoMove();
-      error = '';
-    } catch (e) { error = String(e); }
+    updateBoard(() => api!.undoMove());
   }
 
   async function nextMove() {
     if (!api) return;
-    try {
-      board = await api.nextMove();
-      error = '';
-    } catch (e) { error = String(e); }
+    updateBoard(() => api!.nextMove());
   }
 
   async function previousMove() {
     if (!api) return;
-    try {
-      board = await api.previousMove();
-      error = '';
-    } catch (e) { error = String(e); }
+    updateBoard(() => api!.previousMove());
   }
 
   async function newGame(size?: number) {
     if (!api) { board = mockBoard(); return; }
-    try { board = await api.newGame(size); winrateHistory = []; error = ''; } catch (e) { error = String(e); }
+    try { board = await api.newGame(size); winrateHistory = []; fetchTreePath(); error = ''; } catch (e) { error = String(e); }
   }
 
   async function gotoMove(moveNumber: number) {
     if (!api) return;
-    try { board = await api.gotoMove(moveNumber); error = ''; } catch (e) { error = String(e); }
+    updateBoard(() => api!.gotoMove(moveNumber));
   }
 
   function handleCellClick(x: number, y: number) {
@@ -85,12 +87,12 @@
       if (board.stones[y][x] !== 'EMPTY') {
         // Remove existing stone in edit mode
         if (api) {
-          api.removeStone(x, y).then(b => { board = b; }).catch(e => { error = String(e); });
+          api.removeStone(x, y).then(b => { board = b; fetchTreePath(); }).catch(e => { error = String(e); });
         }
       } else {
         // Add stone in edit mode
         if (api) {
-          api.addStone(x, y, editIsBlack).then(b => { board = b; }).catch(e => { error = String(e); });
+          api.addStone(x, y, editIsBlack).then(b => { board = b; fetchTreePath(); }).catch(e => { error = String(e); });
         }
       }
     } else {
@@ -199,6 +201,10 @@
       {/if}
 
       <EnginePanel status={engineStatus} {analysis} />
+
+      {#if treePath.length > 0}
+        <MoveList treePath={treePath} boardSize={board?.size ?? 19} onNavigate={gotoMove} />
+      {/if}
 
       {#if winrateHistory.length > 0}
         <WinrateGraph winrateHistory={winrateHistory} onNavigate={gotoMove} />
