@@ -6,11 +6,12 @@
   import { drawOverlay } from './overlay-renderer';
   import type { AnalysisData } from '../api/types';
 
-  let { board, analysis = null, onCellClick, boardPx }: {
+  let { board, analysis = null, onCellClick, boardPx, showCoordinates = true }: {
     board: BoardState;
     analysis?: AnalysisData | null;
     onCellClick?: (x: number, y: number) => void;
     boardPx?: number; // 不传则自适应容器
+    showCoordinates?: boolean;
   } = $props();
 
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -39,7 +40,7 @@
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    drawBoard(ctx, board, coords, dpr);
+    drawBoard(ctx, board, coords, dpr, showCoordinates);
 
     // Overlay (engine suggestions)
     if (analysis) {
@@ -80,18 +81,20 @@
     }
   }
 
-  // Preload Yzy theme images on mount
-  onMount(async () => {
-    await preloadAssets();
-    assetsLoaded = true;
-    render();
+  onMount(() => {
+    let ro: ResizeObserver | null = null;
 
-    // 没传 boardPx 时，监听容器大小变化自动重绘
-    if (!boardPx && containerEl) {
-      const ro = new ResizeObserver(() => render());
-      ro.observe(containerEl);
-      return () => ro.disconnect();
-    }
+    preloadAssets().then(() => {
+      assetsLoaded = true;
+      render();
+
+      if (!boardPx && containerEl) {
+        ro = new ResizeObserver(() => render());
+        ro.observe(containerEl);
+      }
+    });
+
+    return () => ro?.disconnect();
   });
 
   // Re-render whenever board or analysis changes

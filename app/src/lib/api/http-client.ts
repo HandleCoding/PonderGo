@@ -1,5 +1,6 @@
 import type { ApiClient } from './client';
 import { TauriClient } from './tauri-client';
+import { defaultAppConfig } from './types';
 
 // Stub for future web mode (Axum server + HTTP/WebSocket)
 export class HttpClient implements ApiClient {
@@ -51,6 +52,8 @@ export class HttpClient implements ApiClient {
   onAnalysis2Update(_callback: (data: any) => void): () => void { return () => {}; }
   onEngine2Identified(_callback: (data: any) => void): () => void { return () => {}; }
   onEngine2Exit(_callback: (normal: boolean) => void): () => void { return () => {}; }
+  async getConfig(): Promise<any> { return defaultAppConfig(); }
+  async saveConfig(config: any): Promise<any> { return config; }
 }
 
 export function createClient(): ApiClient {

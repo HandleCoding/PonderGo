@@ -68,6 +68,39 @@ export interface StartEngineRequest {
   analyze_interval_cs?: number;
 }
 
+export interface EngineEntry {
+  name: string;
+  command: string;
+  initial_commands: string;
+  analyze_interval_cs: number;
+}
+
+export interface UiConfig {
+  board_size: number;
+  show_coordinates: boolean;
+  show_move_numbers: boolean;
+  show_winrate_colors: boolean;
+  dark_mode: boolean;
+}
+
+export interface AppConfig {
+  engines: EngineEntry[];
+  ui: UiConfig;
+}
+
+export function defaultAppConfig(): AppConfig {
+  return {
+    engines: [],
+    ui: {
+      board_size: 19,
+      show_coordinates: true,
+      show_move_numbers: false,
+      show_winrate_colors: true,
+      dark_mode: true,
+    },
+  };
+}
+
 export interface TreeNode {
   move_number: number;
   last_move: [number, number] | null;

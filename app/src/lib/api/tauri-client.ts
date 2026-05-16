@@ -8,6 +8,7 @@ import type {
   SgfResult,
   StartEngineRequest,
   TreeNode,
+  AppConfig,
 } from './types';
 
 export class TauriClient implements ApiClient {
@@ -121,6 +122,14 @@ export class TauriClient implements ApiClient {
 
   async nextVariation(index: number): Promise<BoardState> {
     return invoke<BoardState>('next_variation', { index });
+  }
+
+  async getConfig(): Promise<AppConfig> {
+    return invoke<AppConfig>('get_config');
+  }
+
+  async saveConfig(config: AppConfig): Promise<AppConfig> {
+    return invoke<AppConfig>('save_config', { config });
   }
 
   // Engine 2 (dual-engine)

@@ -33,13 +33,13 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="19" cy="12" r="3"/><circle cx="5" cy="19" r="3"/><line x1="12" y1="8" x2="19" y2="9"/><line x1="12" y1="8" x2="5" y2="16"/></svg>
       </button>
       <div class="tb-sep"></div>
-      <button class="view-btn" title="Add variation">
+      <button class="view-btn" title="Add variation is not implemented yet" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
-      <button class="view-btn" title="Delete branch">
+      <button class="view-btn" title="Delete branch is not implemented yet" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
       </button>
-      <button class="view-btn" title="Flatten">
+      <button class="view-btn" title="Flatten is not implemented yet" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
       </button>
     </div>
@@ -91,18 +91,32 @@
 
 <style>
   .movelist-card {
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
     overflow: hidden;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+  }
+
+  :global([data-theme="light"]) .movelist-card {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(15, 23, 42, 0.08);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
   .card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border);
+    min-height: 34px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(2, 6, 23, 0.14);
+  }
+
+  :global([data-theme="light"]) .card-header {
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    border-bottom-color: rgba(15, 23, 42, 0.08);
   }
 
   .tabs {
@@ -125,7 +139,8 @@
 
   .tab.active {
     color: var(--text-primary);
-    background: var(--bg-tertiary);
+    background: rgba(14, 165, 233, 0.18);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .view-toggle {
@@ -146,6 +161,16 @@
     border-radius: var(--radius-sm);
     color: var(--text-muted);
     transition: all 0.1s;
+  }
+
+  .view-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .view-btn:disabled:hover {
+    color: var(--text-muted);
+    background: transparent;
   }
 
   .view-btn:hover {
@@ -177,7 +202,8 @@
     gap: 4px;
     padding: 3px 8px;
     border-radius: var(--radius-sm);
-    background: var(--bg-tertiary);
+    background: rgba(148, 163, 184, 0.09);
+    border: 1px solid rgba(148, 163, 184, 0.08);
     font-size: 11px;
     color: var(--text-secondary);
     transition: all 0.1s;
@@ -287,10 +313,6 @@
   .tree-node.white .node-dot {
     background: transparent;
     border: 1.5px solid var(--text-secondary);
-  }
-
-  .tree-node.current .node-dot.white {
-    border-color: #fff;
   }
 
   .node-label {

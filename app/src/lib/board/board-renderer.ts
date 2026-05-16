@@ -77,11 +77,11 @@ function getScaledStone(isBlack: boolean, size: number): HTMLCanvasElement | und
   return cached;
 }
 
-export function drawBoard(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number = 1): void {
+export function drawBoard(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem, dpr: number = 1, showCoordinates: boolean = true): void {
   drawBackground(ctx, board, coords);
   drawGrid(ctx, board, coords, dpr);
   drawStarPoints(ctx, board, coords, dpr);
-  drawCoordinates(ctx, board, coords, dpr);
+  if (showCoordinates) drawCoordinates(ctx, board, coords, dpr);
   drawStones(ctx, board, coords, dpr);
 }
 

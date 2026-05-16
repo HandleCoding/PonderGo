@@ -13,6 +13,11 @@
     onToggleEngine2,
     onToggleTheme,
     onToggleSettings,
+    onMinimize,
+    onToggleMaximize,
+    onClose,
+    desktopActionsAvailable = false,
+    fileActionsAvailable = false,
   }: {
     analysisActive?: boolean;
     editMode?: boolean;
@@ -27,17 +32,22 @@
     onToggleEngine2?: () => void;
     onToggleTheme?: () => void;
     onToggleSettings?: () => void;
+    onMinimize?: () => void;
+    onToggleMaximize?: () => void;
+    onClose?: () => void;
+    desktopActionsAvailable?: boolean;
+    fileActionsAvailable?: boolean;
   } = $props();
 </script>
 
 <header class="toolbar">
   <div class="toolbar-left">
-    <button class="tb-btn" onclick={onOpenSgf} title="Open SGF (⌘O)">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <button class="tb-btn primary-file" onclick={onOpenSgf} disabled={!fileActionsAvailable} title={fileActionsAvailable ? 'Open SGF (⌘O)' : 'Available in desktop app'}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2.5z"/></svg>
       <span class="tb-label">Open SGF</span>
       <kbd>⌘O</kbd>
     </button>
-    <button class="tb-btn" onclick={onSaveSgf} title="Save (⌘S)">
+    <button class="tb-btn" onclick={onSaveSgf} disabled={!fileActionsAvailable} title={fileActionsAvailable ? 'Save (⌘S)' : 'Available in desktop app'}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
       <span class="tb-label">Save</span>
       <kbd>⌘S</kbd>
@@ -59,7 +69,7 @@
       <kbd>⌘Z</kbd>
     </button>
     <div class="tb-sep"></div>
-    <button class="tb-btn icon-only" onclick={onToggleSettings} title="Settings">
+    <button class="tb-btn icon-only settings-btn" onclick={onToggleSettings} title="Settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2.83 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
   </div>
@@ -73,7 +83,7 @@
 
   <div class="toolbar-right">
     <button class="tb-btn toggle-btn" class:active={showEngine2} onclick={onToggleEngine2} title="Dual Engine">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/></svg>
+      <span class="switch-track"><span class="switch-thumb"></span></span>
       Dual Engine
     </button>
     <button class="tb-btn icon-only" class:active={editMode} onclick={onToggleEdit} title="Edit Mode">
@@ -89,13 +99,13 @@
       {/if}
     </button>
     <div class="tb-sep"></div>
-    <button class="tb-btn icon-only win-ctrl" title="Minimize">
+    <button class="tb-btn icon-only win-ctrl" onclick={onMinimize} disabled={!desktopActionsAvailable} title={desktopActionsAvailable ? 'Minimize' : 'Desktop only'}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
-    <button class="tb-btn icon-only win-ctrl" title="Maximize">
+    <button class="tb-btn icon-only win-ctrl" onclick={onToggleMaximize} disabled={!desktopActionsAvailable} title={desktopActionsAvailable ? 'Maximize' : 'Desktop only'}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
     </button>
-    <button class="tb-btn icon-only win-ctrl close" title="Close">
+    <button class="tb-btn icon-only win-ctrl close" onclick={onClose} disabled={!desktopActionsAvailable} title={desktopActionsAvailable ? 'Close' : 'Desktop only'}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
@@ -107,18 +117,26 @@
     align-items: center;
     justify-content: space-between;
     height: var(--toolbar-h);
-    padding: 0 10px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+    padding: 4px 6px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 82%, #fff 3%), var(--bg-secondary));
+    border: 1px solid var(--border-subtle);
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 28px rgba(0, 0, 0, 0.18);
     flex-shrink: 0;
     user-select: none;
     -webkit-app-region: drag;
   }
 
+  :global([data-theme="light"]) .toolbar {
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(15, 23, 42, 0.08);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  }
+
   .toolbar-left, .toolbar-right {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
     -webkit-app-region: no-drag;
   }
 
@@ -131,23 +149,43 @@
   .tb-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: var(--radius-md);
+    gap: 7px;
+    min-height: 30px;
+    padding: 5px 11px;
+    border-radius: 7px;
     font-size: 12px;
     color: var(--text-secondary);
-    transition: background 0.1s, color 0.1s;
+    border: 1px solid transparent;
+    transition: background 0.1s, color 0.1s, border-color 0.1s, box-shadow 0.1s;
     white-space: nowrap;
   }
 
   .tb-btn:hover {
-    background: var(--bg-tertiary);
+    background: rgba(148, 163, 184, 0.1);
+    border-color: var(--border-subtle);
     color: var(--text-primary);
   }
 
+  :global([data-theme="light"]) .tb-btn:hover {
+    background: #f1f7fd;
+    border-color: rgba(14, 165, 233, 0.16);
+  }
+
   .tb-btn.active {
-    background: var(--accent);
+    background: color-mix(in srgb, var(--accent) 82%, #000 10%);
+    border-color: color-mix(in srgb, var(--accent) 70%, #fff 6%);
     color: #fff;
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.16) inset;
+  }
+
+  .tb-btn:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+  }
+
+  .tb-btn:disabled:hover {
+    background: transparent;
+    color: var(--text-secondary);
   }
 
   .tb-btn kbd {
@@ -155,25 +193,35 @@
     font-size: 10px;
     padding: 1px 4px;
     border-radius: 3px;
-    background: var(--bg-primary);
+    background: rgba(2, 6, 23, 0.32);
     color: var(--text-muted);
     border: 1px solid var(--border);
   }
 
   .tb-btn.icon-only {
+    width: 31px;
     padding: 6px;
+    justify-content: center;
+  }
+
+  .primary-file {
+    color: #f8b84e;
+  }
+
+  .settings-btn {
+    margin-left: 1px;
   }
 
   .tb-sep {
     width: 1px;
-    height: 20px;
-    background: var(--border);
-    margin: 0 4px;
+    height: 26px;
+    background: linear-gradient(180deg, transparent, var(--border-subtle), transparent);
+    margin: 0 5px;
   }
 
   .toggle-btn {
     font-size: 11px;
-    padding: 4px 10px;
+    padding: 4px 11px 4px 8px;
     border: 1px solid var(--border);
     gap: 6px;
   }
@@ -182,6 +230,35 @@
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
+  }
+
+  .switch-track {
+    width: 24px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    padding: 1px;
+    display: inline-flex;
+    align-items: center;
+    transition: background 0.12s;
+  }
+
+  .switch-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: transform 0.12s, background 0.12s;
+  }
+
+  .toggle-btn.active .switch-track {
+    background: color-mix(in srgb, var(--accent) 52%, #0f172a);
+  }
+
+  .toggle-btn.active .switch-thumb {
+    transform: translateX(10px);
+    background: #fff;
   }
 
   .theme-toggle {
@@ -207,9 +284,19 @@
     align-items: center;
     gap: 6px;
     font-size: 12px;
+    font-weight: 650;
     color: var(--text-muted);
-    padding: 4px 12px;
-    border-radius: var(--radius-md);
+    padding: 5px 14px;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.22);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  }
+
+  :global([data-theme="light"]) .analysis-indicator {
+    background: #f1f5f9;
+    border-color: rgba(15, 23, 42, 0.08);
+    box-shadow: none;
   }
 
   .analysis-indicator.active {

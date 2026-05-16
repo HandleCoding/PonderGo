@@ -1,10 +1,27 @@
 <script lang="ts">
   import type { EngineStatus, AnalysisData } from '../api/types';
+  import EmptyState from '../components/EmptyState.svelte';
 
-  let { status, analysis = null, compact = false }: {
+  let {
+    status,
+    analysis = null,
+    compact = false,
+    hasConfiguredEngine = false,
+    onStartEngine,
+    onStopEngine,
+    onTogglePonder,
+    onGenmove,
+    onOpenSettings,
+  }: {
     status: EngineStatus;
     analysis?: AnalysisData | null;
     compact?: boolean;
+    hasConfiguredEngine?: boolean;
+    onStartEngine?: () => void;
+    onStopEngine?: () => void;
+    onTogglePonder?: () => void;
+    onGenmove?: () => void;
+    onOpenSettings?: () => void;
   } = $props();
 
   function formatPlayouts(n: number): string {
@@ -86,24 +103,37 @@
   <!-- Full Engine 1 panel -->
   <div class="engine-panel">
     <div class="engine-header">
-      <div class="engine-title">
-        <svg class="engine-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <span class="engine-name">{status.running ? status.name : 'No engine'}</span>
-      </div>
-      {#if status.running}
-        <div class="engine-meta">
-          <span class="status-badge" class:pondering={status.pondering} class:thinking={status.thinking}>
-            {#if status.thinking}
-              <span class="pulse-dot"></span>
-            {/if}
-            {status.pondering ? 'Pondering...' : status.thinking ? 'Thinking...' : 'Idle'}
-          </span>
-          {#if analysis && analysis.total_playouts > 0}
-            <span class="visits">{formatPlayouts(analysis.total_playouts)}</span>
-            <span class="visits">{formatTime(analysis.total_playouts / 1000)}</span>
+      <div class="engine-header-main">
+        <div>
+          <div class="engine-title">
+            <svg class="engine-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="engine-name">{status.running ? status.name : 'No engine'}</span>
+          </div>
+          {#if status.running}
+            <div class="engine-meta">
+              <span class="status-badge" class:pondering={status.pondering} class:thinking={status.thinking}>
+                {#if status.thinking}
+                  <span class="pulse-dot"></span>
+                {/if}
+                {status.pondering ? 'Pondering...' : status.thinking ? 'Thinking...' : 'Idle'}
+              </span>
+              {#if analysis && analysis.total_playouts > 0}
+                <span class="visits">{formatPlayouts(analysis.total_playouts)}</span>
+                <span class="visits">{formatTime(analysis.total_playouts / 1000)}</span>
+              {/if}
+            </div>
           {/if}
         </div>
-      {/if}
+        <div class="engine-actions">
+          {#if status.running}
+            <button onclick={onTogglePonder} title="Toggle pondering">{status.pondering ? 'Pause' : 'Ponder'}</button>
+            <button onclick={onGenmove} title="Ask engine to play">Genmove</button>
+            <button class="danger" onclick={onStopEngine} title="Stop engine">Stop</button>
+          {:else if hasConfiguredEngine}
+            <button class="primary" onclick={onStartEngine} title="Start configured engine">Start Engine</button>
+          {/if}
+        </div>
+      </div>
     </div>
 
     <!-- Progress bar -->
@@ -181,14 +211,15 @@
         </div>
       {/if}
     {:else if status.running}
-      <div class="no-analysis">
-        <div class="spinner"></div>
-        Waiting for analysis...
-      </div>
+      <EmptyState compact title="Waiting for analysis" message="Engine is running. Analysis data will appear once visits arrive." />
     {:else}
-      <div class="no-engine">
-        Start an engine to begin analysis
-      </div>
+      <EmptyState
+        compact
+        title={hasConfiguredEngine ? 'Engine is ready' : 'No engine configured'}
+        message={hasConfiguredEngine ? 'Start the engine to begin live analysis.' : 'Add an engine command in settings to unlock analysis.'}
+        actionLabel={hasConfiguredEngine ? 'Start Engine' : 'Configure Engine'}
+        onAction={hasConfiguredEngine ? onStartEngine : onOpenSettings}
+      />
     {/if}
   </div>
 {/if}
@@ -196,15 +227,67 @@
 <style>
   /* Full panel */
   .engine-panel {
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
     overflow: hidden;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+  }
+
+  :global([data-theme="light"]) .engine-panel,
+  :global([data-theme="light"]) .engine-compact {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(15, 23, 42, 0.08);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
   .engine-header {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(2, 6, 23, 0.14);
+  }
+
+  :global([data-theme="light"]) .engine-header,
+  :global([data-theme="light"]) .table-header,
+  :global([data-theme="light"]) .summary-row {
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    border-color: rgba(15, 23, 42, 0.08);
+  }
+
+  .engine-header-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .engine-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .engine-actions button {
+    padding: 5px 9px;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .engine-actions button:hover {
+    color: var(--text-primary);
+  }
+
+  .engine-actions .primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .engine-actions .danger:hover {
+    color: var(--red);
   }
 
   .engine-title {
@@ -215,8 +298,8 @@
   }
 
   .engine-name {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: var(--text-primary);
   }
 
@@ -291,9 +374,10 @@
   .summary-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--border);
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border-subtle);
     gap: 4px;
+    background: rgba(2, 6, 23, 0.08);
   }
 
   .summary-item {
@@ -360,19 +444,21 @@
   .table-header {
     display: grid;
     grid-template-columns: 36px 48px 1fr 64px 56px;
-    padding: 5px 14px;
+    padding: 5px 12px;
     color: var(--text-muted);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(2, 6, 23, 0.12);
   }
 
   .table-row {
     display: grid;
     grid-template-columns: 36px 48px 1fr 64px 56px;
-    padding: 4px 14px;
+    padding: 4px 12px;
     align-items: center;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.07);
     transition: background 0.1s;
   }
 
@@ -473,25 +559,6 @@
     white-space: nowrap;
   }
 
-  .no-analysis, .no-engine {
-    padding: 24px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
 
   @keyframes spin {
     to { transform: rotate(360deg); }
@@ -499,10 +566,11 @@
 
   /* Compact panel */
   .engine-compact {
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
-    padding: 8px 14px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    padding: 8px 12px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
   }
 
   .compact-header {

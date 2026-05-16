@@ -5,6 +5,7 @@ import type {
   SgfResult,
   StartEngineRequest,
   TreeNode,
+  AppConfig,
 } from './types';
 
 export interface ApiClient {
@@ -48,4 +49,8 @@ export interface ApiClient {
   // Tree
   getTreePath(): Promise<TreeNode[]>;
   nextVariation(index: number): Promise<BoardState>;
+
+  // Config
+  getConfig(): Promise<AppConfig>;
+  saveConfig(config: AppConfig): Promise<AppConfig>;
 }
