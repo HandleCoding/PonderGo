@@ -17,6 +17,7 @@
   import { emptyFileState, markDirty, openSgfFile, refreshTreePath, saveSgfFile, type GameFileState } from './lib/state/game-actions';
   import { applyUiConfig, loadConfig, persistConfig } from './lib/state/config-state';
   import { firstEngine, genmoveForCurrentPlayer, startConfiguredEngine, stopConfiguredEngine, toggleConfiguredPonder } from './lib/state/engine-actions';
+  import { playSoundForBoardChange, unlockBoardSounds } from './lib/state/sound-effects';
 
   const isTauri = isDesktop;
   const api = isTauri ? new TauriClient() : null;
@@ -66,6 +67,11 @@
     if (api) persistConfig(api, config).then((saved) => { config = saved; }).catch((e) => { error = String(e); });
   }
 
+  function setBoard(nextBoard: BoardState) {
+    playSoundForBoardChange(board, nextBoard);
+    board = nextBoard;
+  }
+
   async function fetchBoard() {
     if (!api) { board = mockBoard(); return; }
     try {
@@ -77,7 +83,7 @@
 
   async function updateBoard(fn: () => Promise<BoardState>) {
     try {
-      board = await fn();
+      setBoard(await fn());
       fileState = markDirty(fileState);
       await fetchTreePath();
       error = '';
@@ -91,7 +97,7 @@
 
   async function placeMove(x: number, y: number) {
     if (!api || !board) return;
-    try { board = await api.placeMove(x, y); fileState = markDirty(fileState); await fetchTreePath(); error = ''; }
+    try { setBoard(await api.placeMove(x, y)); fileState = markDirty(fileState); await fetchTreePath(); error = ''; }
     catch (e) { error = String(e); }
   }
 
@@ -137,15 +143,16 @@
   }
 
   function handleCellClick(x: number, y: number) {
+    unlockBoardSounds();
     if (!board) return;
     if (editMode) {
       if (board.stones[y][x] !== 'EMPTY') {
         if (api) {
-          api.removeStone(x, y).then(b => { board = b; fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
+          api.removeStone(x, y).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
         }
       } else {
         if (api) {
-          api.addStone(x, y, editIsBlack).then(b => { board = b; fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
+          api.addStone(x, y, editIsBlack).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
         }
       }
     } else {
@@ -184,6 +191,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    unlockBoardSounds();
     if (e.key === 'ArrowLeft') { e.preventDefault(); undoMove(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); nextMove(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); previousMove(); }
@@ -227,7 +235,7 @@
     busyAction = 'open';
     try {
       const result = await openSgfFile(api);
-      board = result.board;
+      setBoard(result.board);
       fileState = result.file;
       winrateHistory = [];
       treePath = await refreshTreePath(api);
