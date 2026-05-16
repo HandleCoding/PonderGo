@@ -3,14 +3,16 @@
   import * as echarts from 'echarts';
   import type { WinratePoint } from '../api/types';
 
-  let { winrateHistory = [], onNavigate }: {
+  let { winrateHistory = [], onNavigate, currentMove = 0 }: {
     winrateHistory: WinratePoint[];
     onNavigate?: (moveNumber: number) => void;
+    currentMove?: number;
   } = $props();
 
   let chartContainer: HTMLDivElement | undefined = $state();
   let chart: echarts.ECharts | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let activeTab = $state<'winrate' | 'ownership' | 'influence'>('winrate');
 
   function updateChart() {
     if (!chart) return;
@@ -19,41 +21,63 @@
     const winrates = winrateHistory.map(p => p.black_winrate);
     const scores = winrateHistory.map(p => p.score_mean);
 
+    // Find blunder points (winrate drop > 15%)
+    const blunderPoints: { coord: [string, string]; value: number }[] = [];
+    for (let i = 1; i < winrateHistory.length; i++) {
+      const prev = winrateHistory[i - 1].black_winrate;
+      const curr = winrateHistory[i].black_winrate;
+      if (Math.abs(prev - curr) > 15) {
+        blunderPoints.push({
+          coord: [String(winrateHistory[i].move_number), String(curr)],
+          value: curr,
+        });
+      }
+    }
+
     chart.setOption({
       tooltip: {
         trigger: 'axis',
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        borderColor: 'var(--border)',
+        textStyle: { color: 'var(--text-primary)', fontSize: 11 },
         formatter: (params: any) => {
           const move = params[0]?.dataIndex ?? 0;
           const wr = winrateHistory[move]?.black_winrate ?? 0;
           const sc = winrateHistory[move]?.score_mean ?? 0;
-          return `Move ${move}<br/>Black: ${wr.toFixed(1)}%<br/>Score: ${sc > 0 ? '+' : ''}${sc.toFixed(1)}`;
+          return `<div style="font-size:11px">
+            <div style="font-weight:600;margin-bottom:2px">Move ${winrateHistory[move]?.move_number ?? move}</div>
+            <div>Black: ${wr.toFixed(1)}%</div>
+            <div>Score: ${sc > 0 ? 'B+' : 'W+'}${Math.abs(sc).toFixed(1)}</div>
+          </div>`;
         },
       },
       grid: {
-        top: 20,
-        bottom: 30,
-        left: 40,
-        right: 15,
+        top: 12,
+        bottom: 24,
+        left: 36,
+        right: 36,
       },
       xAxis: {
         type: 'category',
         data: moves,
-        axisLabel: { color: '#888', fontSize: 10 },
-        axisLine: { lineStyle: { color: '#444' } },
+        axisLabel: { color: 'var(--text-muted)', fontSize: 10 },
+        axisLine: { lineStyle: { color: 'var(--border)' } },
+        axisTick: { show: false },
       },
       yAxis: [
         {
           type: 'value',
           min: 0,
           max: 100,
-          axisLabel: { color: '#888', fontSize: 10, formatter: '{value}%' },
-          axisLine: { lineStyle: { color: '#444' } },
-          splitLine: { lineStyle: { color: '#333' } },
+          splitNumber: 4,
+          axisLabel: { color: 'var(--text-muted)', fontSize: 10, formatter: '{value}%' },
+          axisLine: { show: false },
+          splitLine: { lineStyle: { color: 'var(--border)', type: 'dashed' } },
         },
         {
           type: 'value',
-          axisLabel: { color: '#888', fontSize: 10 },
-          axisLine: { lineStyle: { color: '#444' } },
+          axisLabel: { color: 'var(--text-muted)', fontSize: 10 },
+          axisLine: { show: false },
           splitLine: { show: false },
         },
       ],
@@ -62,19 +86,46 @@
           name: 'Winrate',
           type: 'line',
           data: winrates,
-          smooth: true,
-          lineStyle: { color: '#007fff', width: 2 },
-          itemStyle: { color: '#007fff' },
+          smooth: 0.3,
+          lineStyle: { color: 'var(--blue)', width: 2 },
+          itemStyle: { color: 'var(--blue)' },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(59, 130, 246, 0.2)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0)' },
+            ]),
+          },
           yAxisIndex: 0,
+          symbol: 'none',
+          markPoint: blunderPoints.length > 0 ? {
+            data: blunderPoints.map(p => ({
+              coord: p.coord,
+              symbol: 'circle',
+              symbolSize: 6,
+              itemStyle: { color: 'var(--red)' },
+            })),
+          } : undefined,
+          markLine: currentMove > 0 ? {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: 'var(--text-muted)', type: 'dashed', width: 1 },
+            data: [{ xAxis: String(currentMove) }],
+            label: {
+              formatter: `{b}`,
+              color: 'var(--text-muted)',
+              fontSize: 10,
+            },
+          } : undefined,
         },
         {
           name: 'Score',
           type: 'line',
           data: scores,
-          smooth: true,
-          lineStyle: { color: '#00cc00', width: 1, type: 'dashed' },
-          itemStyle: { color: '#00cc00' },
+          smooth: 0.3,
+          lineStyle: { color: 'var(--orange)', width: 1, type: 'dashed' },
+          itemStyle: { color: 'var(--orange)' },
           yAxisIndex: 1,
+          symbol: 'none',
         },
       ],
     });
@@ -96,7 +147,6 @@
       });
     }
 
-    // Resize observer for responsive chart
     resizeObserver = new ResizeObserver(() => {
       chart?.resize();
     });
@@ -104,17 +154,81 @@
   });
 </script>
 
-<svelte:head>
-  <!-- Ensures cleanup happens -->
-</svelte:head>
-
-<div bind:this={chartContainer} class="winrate-graph"></div>
+<div class="winrate-card">
+  <div class="card-header">
+    <div class="tabs">
+      <button class="tab" class:active={activeTab === 'winrate'} onclick={() => activeTab = 'winrate'}>Winrate & Score</button>
+      <button class="tab" class:active={activeTab === 'ownership'} onclick={() => activeTab = 'ownership'}>Ownership</button>
+      <button class="tab" class:active={activeTab === 'influence'} onclick={() => activeTab = 'influence'}>Influence</button>
+    </div>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background: var(--blue)"></span>Winrate</span>
+      <span class="legend-item"><span class="legend-dot" style="background: var(--orange)"></span>Score</span>
+    </div>
+  </div>
+  <div bind:this={chartContainer} class="chart-area"></div>
+</div>
 
 <style>
-  .winrate-graph {
+  .winrate-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tabs {
+    display: flex;
+    gap: 2px;
+  }
+
+  .tab {
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: all 0.1s;
+  }
+
+  .tab:hover {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+  }
+
+  .tab.active {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+  }
+
+  .legend {
+    display: flex;
+    gap: 10px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  .chart-area {
     width: 100%;
     height: 200px;
-    background: #16213e;
-    border-radius: 12px;
   }
 </style>

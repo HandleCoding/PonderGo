@@ -89,7 +89,8 @@
 <style>
   .board-canvas {
     border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     cursor: pointer;
+    border: 1px solid rgba(0,0,0,0.2);
   }
 </style>
