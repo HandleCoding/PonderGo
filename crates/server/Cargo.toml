@@ -1,0 +1,8 @@
+[package]
+name = "lizzie-server"
+description = "LizzieYzy web server (Axum) - reserved for future"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lizzie-core = { path = "../core" }

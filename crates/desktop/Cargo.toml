@@ -1,0 +1,21 @@
+[package]
+name = "lizzie-desktop"
+description = "LizzieYzy desktop app (Tauri)"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.1", features = [] }
+
+[dependencies]
+lizzie-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tauri = { version = "2.11.1", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
