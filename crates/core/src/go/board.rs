@@ -18,6 +18,15 @@ pub struct MoveMatchInfo {
     pub previous_playouts: usize,
 }
 
+/// SGF-backed board markup for labels and shapes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoardMarkup {
+    pub x: usize,
+    pub y: usize,
+    pub kind: String,
+    pub text: Option<String>,
+}
+
 /// Immutable snapshot of board state, mirroring BoardData.java fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoardData {
@@ -182,11 +191,11 @@ impl Board {
         self.zobrist_hash
     }
 
-    /// Place a stone with full rule checking (captures, ko, suicide).
-    /// `previous_hash` is the Zobrist hash from 2 moves ago for simple ko detection.
+    /// Place a stone with local rule checking (captures and suicide).
+    /// History-dependent rules such as ko/superko are enforced by BoardHistoryList.
     /// Returns PlaceResult indicating whether the move was legal.
     /// On illegal moves, the board state is fully restored.
-    pub fn place_stone(&mut self, x: usize, y: usize, previous_hash: Option<u64>) -> PlaceResult {
+    pub fn place_stone(&mut self, x: usize, y: usize) -> PlaceResult {
         if !self.is_valid_coord(x, y) {
             return PlaceResult::IllegalOccupied;
         }
@@ -216,15 +225,6 @@ impl Board {
             self.stones = saved_stones;
             self.zobrist_hash = saved_hash;
             return PlaceResult::IllegalSuicide;
-        }
-
-        // Check for simple ko (position matches 2 moves ago)
-        if let Some(prev_hash) = previous_hash {
-            if self.zobrist_hash == prev_hash {
-                self.stones = saved_stones;
-                self.zobrist_hash = saved_hash;
-                return PlaceResult::IllegalKo;
-            }
         }
 
         // Update capture counts
@@ -442,8 +442,41 @@ impl Board {
             black_captures: self.black_captures,
             white_captures: self.white_captures,
             komi: self.komi,
+            markup: self.markup(),
         }
     }
+
+    pub fn markup(&self) -> Vec<BoardMarkup> {
+        markup_from_properties(&self.properties, self.size)
+    }
+}
+
+pub fn markup_from_properties(properties: &HashMap<String, String>, board_size: usize) -> Vec<BoardMarkup> {
+    let mut result = Vec::new();
+    for (key, kind) in [("CR", "circle"), ("SQ", "square"), ("TR", "triangle"), ("MA", "cross")] {
+        if let Some(value) = properties.get(key) {
+            for coord in value.split(',').filter(|part| !part.is_empty()) {
+                if let Some((x, y)) = sgf_to_coord(coord) {
+                    if x < board_size && y < board_size {
+                        result.push(BoardMarkup { x, y, kind: kind.to_string(), text: None });
+                    }
+                }
+            }
+        }
+    }
+    if let Some(value) = properties.get("LB") {
+        for entry in value.split(',').filter(|part| !part.is_empty()) {
+            let mut parts = entry.splitn(2, ':');
+            let coord = parts.next().unwrap_or_default();
+            let text = parts.next().unwrap_or_default();
+            if let Some((x, y)) = sgf_to_coord(coord) {
+                if x < board_size && y < board_size {
+                    result.push(BoardMarkup { x, y, kind: "label".to_string(), text: Some(text.to_string()) });
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Serializable board state for the frontend.
@@ -457,6 +490,7 @@ pub struct BoardState {
     pub black_captures: usize,
     pub white_captures: usize,
     pub komi: f64,
+    pub markup: Vec<BoardMarkup>,
 }
 
 #[cfg(test)]
@@ -474,10 +508,10 @@ mod tests {
         // Let's do: Black at (0,0), White at (1,0), Black somewhere else,
         // White at (0,1) — now (0,0) has no liberties, but it's black's stone
         // captured by white.
-        assert_eq!(board.place_stone(0, 0, None), PlaceResult::Legal); // B
-        assert_eq!(board.place_stone(1, 0, None), PlaceResult::Legal); // W
-        assert_eq!(board.place_stone(8, 8, None), PlaceResult::Legal); // B (elsewhere)
-        assert_eq!(board.place_stone(0, 1, None), PlaceResult::Legal); // W captures!
+        assert_eq!(board.place_stone(0, 0), PlaceResult::Legal); // B
+        assert_eq!(board.place_stone(1, 0), PlaceResult::Legal); // W
+        assert_eq!(board.place_stone(8, 8), PlaceResult::Legal); // B (elsewhere)
+        assert_eq!(board.place_stone(0, 1), PlaceResult::Legal); // W captures!
         // Black at (0,0) should be captured by white
         assert_eq!(board.get(0, 0), Stone::Empty);
         assert_eq!(board.white_captures, 1);
@@ -488,37 +522,25 @@ mod tests {
         let mut board = Board::new(9);
         // Set up: White surrounds corner (0,0) from two sides
         // W at (1,0) and (0,1), then Black tries (0,0) — suicide
-        assert_eq!(board.place_stone(8, 8, None), PlaceResult::Legal); // B elsewhere
-        assert_eq!(board.place_stone(1, 0, None), PlaceResult::Legal); // W
-        assert_eq!(board.place_stone(8, 7, None), PlaceResult::Legal); // B elsewhere
-        assert_eq!(board.place_stone(0, 1, None), PlaceResult::Legal); // W
+        assert_eq!(board.place_stone(8, 8), PlaceResult::Legal); // B elsewhere
+        assert_eq!(board.place_stone(1, 0), PlaceResult::Legal); // W
+        assert_eq!(board.place_stone(8, 7), PlaceResult::Legal); // B elsewhere
+        assert_eq!(board.place_stone(0, 1), PlaceResult::Legal); // W
         // Now it's Black's turn, try (0,0) — no liberties, no capture = suicide
-        assert_eq!(board.place_stone(0, 0, None), PlaceResult::IllegalSuicide);
+        assert_eq!(board.place_stone(0, 0), PlaceResult::IllegalSuicide);
     }
 
     #[test]
-    fn test_ko_rule() {
+    fn test_zobrist_changes_after_local_moves() {
         let mut board = Board::new(9);
-        // Set up a ko position:
-        // . W .     (0,0)=empty, (1,0)=W, (2,0)=empty
-        // W B W     (0,1)=W, (1,1)=B, (2,1)=W
-        // . W .     (0,2)=empty, (1,2)=W, (2,2)=empty
-        // Black plays (0,1) captures white at (0,1)... actually let me set up properly
-        // This is a simplified test: just verify ko detection mechanism works
-        board.place_stone(1, 0, None); // B
-        board.place_stone(2, 0, None); // W
-        board.place_stone(0, 1, None); // B
-        board.place_stone(1, 1, None); // W
+        let initial_hash = board.zobrist_hash();
 
-        // Now test that providing a previous_hash blocks the move
-        let hash_before = board.zobrist_hash();
-        board.place_stone(5, 5, None); // B
-        board.place_stone(5, 6, None); // W
+        assert_eq!(board.place_stone(1, 0), PlaceResult::Legal);
+        let after_black = board.zobrist_hash();
+        assert_ne!(after_black, initial_hash);
 
-        // If we pass the current hash as previous_hash, the next move that
-        // returns to this position should be blocked as ko
-        // (This is a structural test of the mechanism, not a full ko scenario)
-        let _ = hash_before;
+        assert_eq!(board.place_stone(2, 0), PlaceResult::Legal);
+        assert_ne!(board.zobrist_hash(), after_black);
     }
 
     #[test]
@@ -536,6 +558,20 @@ mod tests {
         board.add_stone(4, 4, Stone::Black);
         board.add_stone(4, 4, Stone::White); // replace
         assert_eq!(board.get(4, 4), Stone::White);
+    }
+
+    #[test]
+    fn test_edit_mode_preserves_player_to_move() {
+        let mut board = Board::new(9);
+        assert_eq!(board.place_stone(1, 1), PlaceResult::Legal);
+        assert_eq!(board.current_player, Stone::White);
+
+        board.add_stone(3, 3, Stone::Black);
+        board.add_stone(4, 4, Stone::Black);
+        board.add_stone(5, 5, Stone::White);
+        board.remove_stone(3, 3);
+
+        assert_eq!(board.current_player, Stone::White);
     }
 
     #[test]
@@ -568,8 +604,8 @@ mod tests {
     #[test]
     fn test_to_data_roundtrip() {
         let mut board = Board::new_19x19();
-        board.place_stone(3, 3, None);
-        board.place_stone(15, 15, None);
+        board.place_stone(3, 3);
+        board.place_stone(15, 15);
         let data = board.to_data();
         let restored = Board::from_data(&data);
         assert_eq!(restored.stones, board.stones);

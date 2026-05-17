@@ -13,7 +13,7 @@
   import ResizableSplitter from './lib/layout/ResizableSplitter.svelte';
   import AutoResizeBoard from './lib/layout/AutoResizeBoard.svelte';
   import { TauriClient } from './lib/api/tauri-client';
-  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type AnalysisOverview, type WinratePoint, type TreeNode, type AppConfig, type MoveData } from './lib/api/types';
+  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type AnalysisOverview, type WinratePoint, type TreeNode, type AppConfig, type MoveData, type RuntimeEngineParams } from './lib/api/types';
   import { isDesktop, minimizeWindow, toggleMaximizeWindow, closeWindow } from './lib/state/runtime';
   import { emptyFileState, markDirty, openSgfFile, refreshTreePath, saveSgfFile, type GameFileState } from './lib/state/game-actions';
   import { applyUiConfig, loadConfig, persistConfig } from './lib/state/config-state';
@@ -23,6 +23,10 @@
 
   const isTauri = isDesktop;
   const api = isTauri ? new TauriClient() : null;
+
+  type BoardInteractionMode = 'play' | 'edit-black' | 'edit-white' | 'edit-alternate' | 'erase-stone' | 'select-points';
+  type MarkupMode = 'none' | 'label-letter' | 'label-number' | 'circle' | 'square' | 'triangle' | 'cross' | 'erase-markup';
+  type AnalysisJobMode = 'idle' | 'live' | 'flash' | 'auto';
 
   let board: BoardState | null = $state(null);
   let engineStatus: EngineStatus = $state({
@@ -42,6 +46,16 @@
   let winrateHistory: WinratePoint[] = $state([]);
   let treePath: TreeNode[] = $state([]);
   let error: string = $state('');
+  let boardMode: BoardInteractionMode = $state('play');
+  let markupMode: MarkupMode = $state('none');
+  let nextLetterLabel: number = $state(0);
+  let nextNumberLabel: number = $state(1);
+  let alternateEditIsBlack: boolean = $state(true);
+  let selectedAnalysisPoints: Array<[number, number]> = $state([]);
+  let analysisJobMode: AnalysisJobMode = $state('idle');
+  let showAutoAnalysis: boolean = $state(false);
+  let showHawkeye: boolean = $state(false);
+  let engineRuntimeParams: RuntimeEngineParams = $state({ analyze_interval_cs: 10 });
   let editMode: boolean = $state(false);
   let editIsBlack: boolean = $state(true);
   let showEngine2: boolean = $state(false);
@@ -75,6 +89,7 @@
   } as const;
 
   const analysisActive = $derived(analysis != null && (analysis as AnalysisData).total_playouts > 0);
+  const effectiveAnalysisMode = $derived<AnalysisJobMode>(analysisActive && analysisJobMode === 'idle' ? 'live' : analysisJobMode);
   const configuredEngine = $derived(profileById(selectedEngine1ProfileId));
   const configuredEngine2 = $derived(profileById(selectedEngine2ProfileId));
   const boardAnalysis = $derived<AnalysisData | null>(showEngine2 && boardAnalysisSource === 2 ? analysis2 : analysis);
@@ -171,6 +186,14 @@
     } catch (e) { error = String(e); }
   }
 
+  function markToolbarStateDirty(nextBoard: BoardState) {
+    setBoard(nextBoard);
+    fileState = markDirty(fileState);
+    fetchTreePath();
+    fetchAnalysisOverviews();
+    error = '';
+  }
+
   async function fetchTreePath() {
     if (!api) return;
     treePath = await refreshTreePath(api);
@@ -238,19 +261,65 @@
   function handleCellClick(x: number, y: number) {
     unlockBoardSounds();
     if (!board) return;
+    if (markupMode !== 'none') {
+      applyMarkupMode(x, y);
+      return;
+    }
+    if (boardMode === 'select-points') {
+      toggleAnalysisPoint(x, y);
+      return;
+    }
+    if (boardMode === 'erase-stone') {
+      if (api && board.stones[y][x] !== 'EMPTY') {
+        api.removeStone(x, y).then(markToolbarStateDirty).catch(e => { error = String(e); });
+      }
+      return;
+    }
+    if (boardMode === 'edit-black' || boardMode === 'edit-white' || boardMode === 'edit-alternate') {
+      const isBlack = boardMode === 'edit-black' || (boardMode === 'edit-alternate' && alternateEditIsBlack);
+      if (api) {
+        api.addStone(x, y, isBlack).then((b) => {
+          markToolbarStateDirty(b);
+          if (boardMode === 'edit-alternate') alternateEditIsBlack = !alternateEditIsBlack;
+        }).catch(e => { error = String(e); });
+      }
+      return;
+    }
     if (editMode) {
       if (board.stones[y][x] !== 'EMPTY') {
         if (api) {
-          api.removeStone(x, y).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); fetchAnalysisOverviews(); }).catch(e => { error = String(e); });
+          api.removeStone(x, y).then(markToolbarStateDirty).catch(e => { error = String(e); });
         }
       } else {
         if (api) {
-          api.addStone(x, y, editIsBlack).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); fetchAnalysisOverviews(); }).catch(e => { error = String(e); });
+          api.addStone(x, y, editIsBlack).then(markToolbarStateDirty).catch(e => { error = String(e); });
         }
       }
     } else {
       placeMove(x, y);
     }
+  }
+
+  function applyMarkupMode(x: number, y: number) {
+    if (!api) return;
+    if (markupMode === 'erase-markup') {
+      api.removeMarkup(x, y).then(markToolbarStateDirty).catch(e => { error = String(e); });
+      return;
+    }
+    const text = markupMode === 'label-letter'
+      ? String.fromCharCode('A'.charCodeAt(0) + (nextLetterLabel++ % 26))
+      : markupMode === 'label-number'
+        ? String(nextNumberLabel++)
+        : undefined;
+    const kind = markupMode === 'label-letter' || markupMode === 'label-number' ? 'label' : markupMode;
+    api.setMarkup(x, y, kind, text).then(markToolbarStateDirty).catch(e => { error = String(e); });
+  }
+
+  function toggleAnalysisPoint(x: number, y: number) {
+    const exists = selectedAnalysisPoints.some(([px, py]) => px === x && py === y);
+    selectedAnalysisPoints = exists
+      ? selectedAnalysisPoints.filter(([px, py]) => px !== x || py !== y)
+      : [...selectedAnalysisPoints, [x, y]];
   }
 
   function playCandidateMove(coordinate: string) {
@@ -285,7 +354,8 @@
 
   function handleKeydown(e: KeyboardEvent) {
     unlockBoardSounds();
-    if (e.key === 'ArrowLeft') { e.preventDefault(); undoMove(); }
+    if (e.key === 'Escape') { markupMode = 'none'; boardMode = 'play'; }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); undoMove(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); nextMove(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); previousMove(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); newGame(); }
@@ -419,6 +489,39 @@
     }
   }
 
+  async function handlePasteSgf() {
+    if (!api || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    busyAction = 'paste';
+    try {
+      const content = await navigator.clipboard.readText();
+      const result = await api.loadSgf(content);
+      if (!result.success) throw new Error(result.message);
+      const nextBoard = await api.getBoard();
+      setBoard(nextBoard);
+      fileState = markDirty({ ...emptyFileState, name: 'Pasted SGF' });
+      winrateHistory = [];
+      treePath = await refreshTreePath(api);
+      await fetchAnalysisOverviews();
+      error = '';
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busyAction = '';
+    }
+  }
+
+  async function handleSetKomi(komi: number) {
+    if (!api) return;
+    try { markToolbarStateDirty(await api.setKomi(komi)); }
+    catch (e) { error = String(e); }
+  }
+
+  async function handleClearMarkup() {
+    if (!api) return;
+    try { markToolbarStateDirty(await api.clearMarkup()); }
+    catch (e) { error = String(e); }
+  }
+
   async function handleSaveConfig(nextConfig: AppConfig) {
     try {
       config = withEngineProfileIds(await persistConfig(api, withEngineProfileIds(nextConfig)));
@@ -448,8 +551,70 @@
 
   async function handleTogglePonder() {
     if (!api) return;
-    try { engineStatus = await toggleConfiguredPonder(api); error = ''; }
+    try {
+      engineStatus = await toggleConfiguredPonder(api);
+      analysisJobMode = engineStatus.pondering ? 'live' : 'idle';
+      error = '';
+    }
     catch (e) { error = String(e); }
+  }
+
+  async function handleStopAnalysis() {
+    if (!api) return;
+    try {
+      if (engineStatus.pondering || analysisActive) engineStatus = await toggleConfiguredPonder(api);
+      analysisJobMode = 'idle';
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function handleFlashAnalysis() {
+    if (!api) return;
+    try {
+      if (!engineStatus.pondering) engineStatus = await toggleConfiguredPonder(api);
+      analysisJobMode = 'flash';
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function handleApplyPointConstraints() {
+    if (!api || selectedAnalysisPoints.length === 0) return;
+    try {
+      await api.analyzeWithConstraints({
+        mode: 'allow',
+        points: selectedAnalysisPoints.map(([x, y]) => ({ x, y })),
+        applies_to: 'both',
+      });
+      analysisJobMode = 'live';
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function handleClearPointConstraints() {
+    selectedAnalysisPoints = [];
+    if (!api) return;
+    try { await api.clearAnalysisConstraints(); error = ''; }
+    catch (e) { error = String(e); }
+  }
+
+  function handleCancelLastPoint() {
+    selectedAnalysisPoints = selectedAnalysisPoints.slice(0, -1);
+  }
+
+  async function handleSetEngineInterval(value: number) {
+    if (!api) return;
+    try {
+      engineRuntimeParams = await api.setEngineRuntimeParams({ analyze_interval_cs: value });
+      error = '';
+    } catch (e) { error = String(e); }
+  }
+
+  async function handleResetEngineParams() {
+    if (!api) return;
+    try {
+      engineRuntimeParams = await api.resetEngineRuntimeParams();
+      error = '';
+    } catch (e) { error = String(e); }
   }
 
   async function handleStartEngine2() {
@@ -529,7 +694,7 @@
     const stones: ('BLACK' | 'WHITE' | 'EMPTY')[][] = Array.from({ length: size }, () => Array(size).fill('EMPTY') as ('BLACK' | 'WHITE' | 'EMPTY')[]);
     return {
       size, stones, current_player: 'BLACK', move_number: 0,
-      last_move: null, black_captures: 0, white_captures: 0, komi: 6.5,
+      last_move: null, black_captures: 0, white_captures: 0, komi: 6.5, markup: [],
     };
   }
 
@@ -540,6 +705,7 @@
     if (bgImg) bgImageUrl = '/theme/background.jpg';
     try {
       await applyLoadedConfig(await loadConfig(api));
+      if (api) engineRuntimeParams = await api.getEngineRuntimeParams();
     } catch (e) { error = String(e); }
     fetchBoard();
     setupEngineListeners();
@@ -549,16 +715,38 @@
 
 <div class="app-layout" style:background-image={bgImageUrl ? `url(${bgImageUrl})` : undefined}>
   <TopToolbar
-    {analysisActive}
-    {editMode}
+    analysisActive={analysisActive}
+    analysisMode={effectiveAnalysisMode}
+    {boardMode}
+    {markupMode}
+    selectedPointCount={selectedAnalysisPoints.length}
+    {showHawkeye}
     {showEngine2}
     {isDark}
+    komi={board?.komi ?? 6.5}
+    boardSize={board?.size ?? 19}
+    engineIntervalCs={engineRuntimeParams.analyze_interval_cs}
     onNewGame={() => newGame()}
+    onNewGameSize={(size) => newGame(size)}
+    onSetKomi={handleSetKomi}
     onPass={() => passMove()}
     onUndo={() => undoMove()}
     onOpenSgf={handleOpenSgf}
     onSaveSgf={handleSaveSgf}
-    onToggleEdit={() => editMode = !editMode}
+    onPasteSgf={handlePasteSgf}
+    onToggleLiveAnalysis={handleTogglePonder}
+    onFlashAnalysis={handleFlashAnalysis}
+    onOpenAutoAnalysis={() => showAutoAnalysis = true}
+    onStopAnalysis={handleStopAnalysis}
+    onSetBoardMode={(mode) => { boardMode = mode; if (mode !== 'play') markupMode = 'none'; }}
+    onSetMarkupMode={(mode) => { markupMode = markupMode === mode ? 'none' : mode; if (mode !== 'none') boardMode = 'play'; }}
+    onClearMarkup={handleClearMarkup}
+    onApplyPointConstraints={handleApplyPointConstraints}
+    onCancelLastPoint={handleCancelLastPoint}
+    onClearPointConstraints={handleClearPointConstraints}
+    onToggleHawkeye={() => showHawkeye = !showHawkeye}
+    onSetEngineInterval={handleSetEngineInterval}
+    onResetEngineParams={handleResetEngineParams}
     onToggleEngine2={() => showEngine2 = !showEngine2}
     onToggleTheme={toggleTheme}
     onToggleSettings={() => openSettingsDialog()}
@@ -567,6 +755,7 @@
     onClose={closeWindow}
     desktopActionsAvailable={isTauri}
     fileActionsAvailable={isTauri && !busyAction}
+    engineActionsAvailable={isTauri && engineStatus.running}
   />
 
   <div class="main-content">
@@ -578,6 +767,7 @@
               {board}
               analysis={boardAnalysis}
               previewMove={boardPreviewMove}
+              selectedPoints={selectedAnalysisPoints}
               onCellClick={handleCellClick}
               onPreviewMove={previewCandidate}
               onClearPreview={clearCandidatePreview}
@@ -615,6 +805,7 @@
                 label="Engine 1"
                 profileName={configuredEngine?.name ?? ''}
                 hasConfiguredEngine={configuredEngine != null}
+                restrictedAnalysis={selectedAnalysisPoints.length > 0 && effectiveAnalysisMode === 'live'}
                 onStartEngine={handleStartEngine}
                 onStopEngine={handleStopEngine}
                 onTogglePonder={handleTogglePonder}
@@ -685,7 +876,21 @@
               {/if}
               <button class="workbench-resizer horizontal" type="button" aria-label="Resize winrate graph" onmousedown={startResizeGraph}></button>
               <div class="movelist-container" class:empty={treePath.length === 0}>
-                {#if treePath.length > 0}
+                {#if showHawkeye}
+                  <div class="panel-card hawkeye-panel">
+                    <div class="starter-header">
+                      <span>鹰眼分析</span>
+                      <span class="starter-mode">Hawkeye</span>
+                    </div>
+                    <div class="hawkeye-grid">
+                      <span>最佳点</span><strong>{analysisOverview?.best_move ?? '--'}</strong>
+                      <span>黑胜率</span><strong>{analysisOverview?.winrate != null ? `${analysisOverview.winrate.toFixed(1)}%` : '--'}</strong>
+                      <span>目差</span><strong>{analysisOverview?.score_lead != null ? analysisOverview.score_lead.toFixed(1) : '--'}</strong>
+                      <span>计算量</span><strong>{analysisOverview?.total_playouts ?? 0}</strong>
+                      <span>选点约束</span><strong>{selectedAnalysisPoints.length > 0 ? `${selectedAnalysisPoints.length} 点` : '全局'}</strong>
+                    </div>
+                  </div>
+                {:else if treePath.length > 0}
                   <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoTreePath} />
                 {:else}
                   <div class="panel-card starter-movelist">
@@ -801,6 +1006,30 @@
       onSave={handleSaveConfig}
     />
   {/if}
+
+  {#if showAutoAnalysis}
+    <div class="modal-backdrop" role="presentation" onclick={() => showAutoAnalysis = false}>
+      <div class="auto-analysis-dialog" role="dialog" aria-label="自动分析设置" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showAutoAnalysis = false)} tabindex="-1">
+        <h3>自动分析设置</h3>
+        <div class="auto-grid">
+          <label>开始手数 <input value={board?.move_number ?? 0} disabled /></label>
+          <label>结束手数 <input placeholder="默认最后一手" /></label>
+          <label>每手时间(秒) <input value="2" /></label>
+          <label>每手总计算量 <input placeholder="可选" /></label>
+        </div>
+        <div class="auto-options">
+          <label><input type="checkbox" checked /> 分析黑棋</label>
+          <label><input type="checkbox" checked /> 分析白棋</label>
+          <label><input type="checkbox" /> 分析所有分支</label>
+          <label><input type="checkbox" checked /> 自动保存棋谱</label>
+        </div>
+        <footer>
+          <button onclick={() => showAutoAnalysis = false}>取消</button>
+          <button class="primary" onclick={() => { showAutoAnalysis = false; analysisJobMode = 'auto'; handleFlashAnalysis(); }}>开始分析</button>
+        </footer>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -884,6 +1113,109 @@
     padding: 3px 10px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--yellow);
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.42);
+    backdrop-filter: blur(6px);
+  }
+
+  .auto-analysis-dialog {
+    width: min(560px, calc(100vw - 32px));
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .auto-analysis-dialog h3 {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .auto-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .auto-grid label,
+  .auto-options label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .auto-grid input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 8px 10px;
+  }
+
+  .auto-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .auto-options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .auto-analysis-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .auto-analysis-dialog button {
+    padding: 8px 13px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+  }
+
+  .auto-analysis-dialog button.primary {
+    color: #fff;
+    background: var(--accent);
+  }
+
+  .hawkeye-panel {
+    height: 100%;
+    padding: 12px;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+  }
+
+  .hawkeye-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 14px;
+    align-content: start;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .hawkeye-grid strong {
+    color: var(--text-primary);
+    text-align: right;
+    font-family: var(--font-mono);
   }
 
   /* ========== RIGHT PANEL: Yzy-style layout ========== */

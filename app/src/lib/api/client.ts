@@ -7,6 +7,8 @@ import type {
   StartEngineRequest,
   TreeNode,
   AppConfig,
+  RuntimeEngineParams,
+  AnalysisConstraintRequest,
 } from './types';
 
 export interface ApiClient {
@@ -21,6 +23,10 @@ export interface ApiClient {
   gotoTreePath(path: number[]): Promise<BoardState>;
   addStone(x: number, y: number, isBlack: boolean): Promise<BoardState>;
   removeStone(x: number, y: number): Promise<BoardState>;
+  setKomi(komi: number): Promise<BoardState>;
+  setMarkup(x: number, y: number, kind: string, text?: string): Promise<BoardState>;
+  removeMarkup(x: number, y: number): Promise<BoardState>;
+  clearMarkup(): Promise<BoardState>;
   newGame(size?: number): Promise<BoardState>;
 
   // Engine
@@ -31,6 +37,11 @@ export interface ApiClient {
   genmove(color: string): Promise<void>;
   getAnalysis(): Promise<AnalysisData>;
   getAnalysisOverview(): Promise<AnalysisOverview>;
+  getEngineRuntimeParams(): Promise<RuntimeEngineParams>;
+  setEngineRuntimeParams(params: RuntimeEngineParams): Promise<RuntimeEngineParams>;
+  resetEngineRuntimeParams(): Promise<RuntimeEngineParams>;
+  analyzeWithConstraints(request: AnalysisConstraintRequest): Promise<void>;
+  clearAnalysisConstraints(): Promise<void>;
   onAnalysisUpdate(callback: (data: AnalysisData) => void): () => void;
   onAnalysisOverview(callback: (data: AnalysisOverview) => void): () => void;
   onEngineIdentified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;

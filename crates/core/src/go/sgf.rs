@@ -432,6 +432,7 @@ pub fn write_sgf(history: &BoardHistoryList, board: &Board) -> String {
     if !root_data.comment.is_empty() {
         builder.push_str(&format!("C[{}]", escape_sgf(&root_data.comment)));
     }
+    write_properties(&root_data.properties, &mut builder);
 
     // Write variation tree starting from root
     write_variations(&root, &mut builder, board.size);
@@ -502,6 +503,17 @@ fn write_variations(node_ref: &NodeRef, builder: &mut String, board_size: usize)
     }
 }
 
+fn write_properties(properties: &HashMap<String, String>, builder: &mut String) {
+    for (key, value) in properties {
+        if key == "C" || key == "B" || key == "W" {
+            continue;
+        }
+        for item in value.split(',').filter(|part| !part.is_empty()) {
+            builder.push_str(&format!("{}[{}]", key, escape_sgf(item)));
+        }
+    }
+}
+
 /// Write a single node in SGF format.
 fn write_node(node_ref: &NodeRef, builder: &mut String, board_size: usize) {
     let data = node_ref.borrow().data.clone();
@@ -527,11 +539,7 @@ fn write_node(node_ref: &NodeRef, builder: &mut String, board_size: usize) {
     }
 
     // Write generic properties
-    for (key, value) in &data.properties {
-        if key != "C" && key != "B" && key != "W" {
-            builder.push_str(&format!("{}[{}]", key, escape_sgf(value)));
-        }
-    }
+    write_properties(&data.properties, builder);
 }
 
 #[cfg(test)]
@@ -649,6 +657,36 @@ mod tests {
     fn test_multi_go_detection() {
         assert!(is_multi_go_format("(;B[pd](;W[dp])(;W[dd]))"));
         assert!(!is_multi_go_format("(;B[pd];W[dp])"));
+    }
+
+    #[test]
+    fn test_markup_properties_roundtrip() {
+        let sgf = "(;SZ[19];B[pd]LB[pd:A]CR[dd]SQ[qq]TR[dp]MA[pp])";
+        let mut history = parse_sgf(sgf).unwrap();
+        history.next();
+        let data = history.get_data();
+        assert_eq!(data.properties.get("LB"), Some(&"pd:A".to_string()));
+        assert_eq!(data.properties.get("CR"), Some(&"dd".to_string()));
+        let board = Board::from_data(&data);
+        let output = write_sgf(&history, &board);
+        assert!(output.contains("LB[pd:A]"));
+        assert!(output.contains("CR[dd]"));
+        assert!(output.contains("SQ[qq]"));
+        assert!(output.contains("TR[dp]"));
+        assert!(output.contains("MA[pp]"));
+    }
+
+    #[test]
+    fn test_setup_properties_write_as_multi_values() {
+        let mut board = Board::new_19x19();
+        board.add_stone(3, 3, Stone::Black);
+        board.add_stone(15, 15, Stone::White);
+        board.properties.insert("AB".to_string(), "dd".to_string());
+        board.properties.insert("AW".to_string(), "pp".to_string());
+        let history = BoardHistoryList::new(board.to_data());
+        let output = write_sgf(&history, &board);
+        assert!(output.contains("AB[dd]"));
+        assert!(output.contains("AW[pp]"));
     }
 
     #[test]

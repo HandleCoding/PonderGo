@@ -31,6 +31,10 @@ export class HttpClient implements ApiClient {
   async gotoTreePath(_path: number[]): Promise<any> { throw new Error('Not implemented'); }
   async addStone(_x: number, _y: number, _isBlack: boolean): Promise<any> { throw new Error('Not implemented'); }
   async removeStone(_x: number, _y: number): Promise<any> { throw new Error('Not implemented'); }
+  async setKomi(_komi: number): Promise<any> { throw new Error('Not implemented'); }
+  async setMarkup(_x: number, _y: number, _kind: string, _text?: string): Promise<any> { throw new Error('Not implemented'); }
+  async removeMarkup(_x: number, _y: number): Promise<any> { throw new Error('Not implemented'); }
+  async clearMarkup(): Promise<any> { throw new Error('Not implemented'); }
   async newGame(_size?: number): Promise<any> { throw new Error('Not implemented'); }
   async startEngine(_request: any): Promise<void> { throw new Error('Not implemented'); }
   async stopEngine(): Promise<void> { throw new Error('Not implemented'); }
@@ -39,6 +43,11 @@ export class HttpClient implements ApiClient {
   async genmove(_color: string): Promise<void> { throw new Error('Not implemented'); }
   async getAnalysis(): Promise<any> { throw new Error('Not implemented'); }
   async getAnalysisOverview(): Promise<any> { throw new Error('Not implemented'); }
+  async getEngineRuntimeParams(): Promise<any> { return { analyze_interval_cs: 10 }; }
+  async setEngineRuntimeParams(params: any): Promise<any> { return params; }
+  async resetEngineRuntimeParams(): Promise<any> { return { analyze_interval_cs: 10 }; }
+  async analyzeWithConstraints(_request: any): Promise<void> { throw new Error('Not implemented'); }
+  async clearAnalysisConstraints(): Promise<void> { throw new Error('Not implemented'); }
   onAnalysisUpdate(_callback: (data: any) => void): () => void { return () => {}; }
   onAnalysisOverview(_callback: (data: any) => void): () => void { return () => {}; }
   onEngineIdentified(_callback: (data: any) => void): () => void { return () => {}; }

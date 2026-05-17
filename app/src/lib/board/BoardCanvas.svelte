@@ -6,13 +6,14 @@
   import { drawOverlay, hitTestCandidateMove } from './overlay-renderer';
   import type { AnalysisData, MoveData } from '../api/types';
 
-  let { board, analysis = null, previewMove = null, showPvRoute = false, showCandidateMarkers = true, showPvPath = true, onCellClick, onPreviewMove, onClearPreview, boardPx, showCoordinates = true }: {
+  let { board, analysis = null, previewMove = null, showPvRoute = false, showCandidateMarkers = true, showPvPath = true, selectedPoints = [], onCellClick, onPreviewMove, onClearPreview, boardPx, showCoordinates = true }: {
     board: BoardState;
     analysis?: AnalysisData | null;
     previewMove?: MoveData | null;
     showPvRoute?: boolean;
     showCandidateMarkers?: boolean;
     showPvPath?: boolean;
+    selectedPoints?: Array<[number, number]>;
     onCellClick?: (x: number, y: number) => void;
     onPreviewMove?: (move: MoveData) => void;
     onClearPreview?: () => void;
@@ -54,9 +55,30 @@
       drawOverlay(ctx, analysis, board, coords, previewMove, showPvRoute, showCandidateMarkers, showPvPath);
     }
 
+    if (selectedPoints.length > 0) {
+      drawSelectedPoints(ctx);
+    }
+
     // Hover preview
     if (hoverPos && !hoveredCandidate && board.stones[hoverPos[1]][hoverPos[0]] === 'EMPTY') {
       drawHoverPreview(ctx, coords, hoverPos[0], hoverPos[1], board.current_player);
+    }
+    ctx.restore();
+  }
+
+  function drawSelectedPoints(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.strokeStyle = '#38bdf8';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+    ctx.lineWidth = Math.max(2, coords.cellPx * 0.08);
+    for (const [x, y] of selectedPoints) {
+      const cx = coords.stoneX(x);
+      const cy = coords.stoneY(y);
+      const r = coords.stoneRadius() * 0.72;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
     ctx.restore();
   }

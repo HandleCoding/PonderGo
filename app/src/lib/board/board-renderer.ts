@@ -84,6 +84,7 @@ export function drawBoard(ctx: CanvasRenderingContext2D, board: BoardState, coor
   drawStarPoints(ctx, board, coords, dpr);
   if (showCoordinates) drawCoordinates(ctx, board, coords, dpr);
   drawStones(ctx, board, coords, dpr);
+  drawMarkup(ctx, board, coords);
 }
 
 /**
@@ -310,6 +311,48 @@ function drawFallbackStone(ctx: CanvasRenderingContext2D, cx: number, cy: number
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
+  }
+}
+
+function drawMarkup(ctx: CanvasRenderingContext2D, board: BoardState, coords: CoordinateSystem): void {
+  const size = coords.stoneRadius() * 1.35;
+  for (const mark of board.markup ?? []) {
+    const cx = coords.stoneX(mark.x);
+    const cy = coords.stoneY(mark.y);
+    const stone = board.stones[mark.y]?.[mark.x];
+    const color = stone === 'BLACK' ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.4, coords.cellPx * 0.06);
+    ctx.font = `700 ${Math.max(11, coords.cellPx * 0.46)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    if (mark.kind === 'label') {
+      ctx.fillText(mark.text ?? '', cx, cy + 0.5);
+    } else if (mark.kind === 'circle') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (mark.kind === 'square') {
+      ctx.strokeRect(cx - size * 0.38, cy - size * 0.38, size * 0.76, size * 0.76);
+    } else if (mark.kind === 'triangle') {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - size * 0.45);
+      ctx.lineTo(cx - size * 0.43, cy + size * 0.35);
+      ctx.lineTo(cx + size * 0.43, cy + size * 0.35);
+      ctx.closePath();
+      ctx.stroke();
+    } else if (mark.kind === 'cross') {
+      ctx.beginPath();
+      ctx.moveTo(cx - size * 0.42, cy - size * 0.42);
+      ctx.lineTo(cx + size * 0.42, cy + size * 0.42);
+      ctx.moveTo(cx + size * 0.42, cy - size * 0.42);
+      ctx.lineTo(cx - size * 0.42, cy + size * 0.42);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 }
 

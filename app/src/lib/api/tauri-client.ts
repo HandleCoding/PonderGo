@@ -10,6 +10,8 @@ import type {
   StartEngineRequest,
   TreeNode,
   AppConfig,
+  RuntimeEngineParams,
+  AnalysisConstraintRequest,
 } from './types';
 
 export class TauriClient implements ApiClient {
@@ -53,6 +55,22 @@ export class TauriClient implements ApiClient {
     return invoke<BoardState>('remove_stone', { x, y });
   }
 
+  async setKomi(komi: number): Promise<BoardState> {
+    return invoke<BoardState>('set_komi', { komi });
+  }
+
+  async setMarkup(x: number, y: number, kind: string, text?: string): Promise<BoardState> {
+    return invoke<BoardState>('set_markup', { x, y, kind, text: text ?? null });
+  }
+
+  async removeMarkup(x: number, y: number): Promise<BoardState> {
+    return invoke<BoardState>('remove_markup', { x, y });
+  }
+
+  async clearMarkup(): Promise<BoardState> {
+    return invoke<BoardState>('clear_markup');
+  }
+
   async newGame(size?: number): Promise<BoardState> {
     return invoke<BoardState>('new_game', { size });
   }
@@ -83,6 +101,26 @@ export class TauriClient implements ApiClient {
 
   async getAnalysisOverview(): Promise<AnalysisOverview> {
     return invoke<AnalysisOverview>('get_analysis_overview');
+  }
+
+  async getEngineRuntimeParams(): Promise<RuntimeEngineParams> {
+    return invoke<RuntimeEngineParams>('get_engine_runtime_params');
+  }
+
+  async setEngineRuntimeParams(params: RuntimeEngineParams): Promise<RuntimeEngineParams> {
+    return invoke<RuntimeEngineParams>('set_engine_runtime_params', { params });
+  }
+
+  async resetEngineRuntimeParams(): Promise<RuntimeEngineParams> {
+    return invoke<RuntimeEngineParams>('reset_engine_runtime_params');
+  }
+
+  async analyzeWithConstraints(request: AnalysisConstraintRequest): Promise<void> {
+    return invoke('analyze_with_constraints', { request });
+  }
+
+  async clearAnalysisConstraints(): Promise<void> {
+    return invoke('clear_analysis_constraints');
   }
 
   onAnalysisUpdate(callback: (data: AnalysisData) => void): () => void {

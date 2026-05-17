@@ -20,6 +20,7 @@
     onPlayMove,
     onPreviewMove,
     onClearPreview,
+    restrictedAnalysis = false,
   }: {
     status: EngineStatus;
     analysis?: AnalysisData | null;
@@ -38,6 +39,7 @@
     onPlayMove?: (coordinate: string) => void;
     onPreviewMove?: (move: MoveData) => void;
     onClearPreview?: () => void;
+    restrictedAnalysis?: boolean;
   } = $props();
 
   function formatPlayouts(n: number): string {
@@ -250,7 +252,7 @@
       </div>
 
       <div class="overview-strip">
-        <span>首选 <strong>{currentOverview?.best_move ?? topMoves[0]?.coordinate ?? '--'}</strong></span>
+        <span>{restrictedAnalysis ? '受限首选' : '首选'} <strong>{currentOverview?.best_move ?? topMoves[0]?.coordinate ?? '--'}</strong></span>
         <span>胜率 <strong class:good={(currentOverview?.winrate ?? bestBlackWinrate) >= 50}>{currentOverview?.winrate == null ? '--' : `${currentOverview.winrate.toFixed(1)}%`}</strong></span>
         <span>目差 <strong>{formatScoreLead(currentOverview?.score_lead)}</strong></span>
         <span>计算量 <strong>{formatPlayouts(currentOverview?.total_playouts ?? analysis?.total_playouts ?? 0)}</strong></span>

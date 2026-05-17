@@ -566,25 +566,8 @@ impl BoardHistoryList {
         Some(self.head.borrow().data.clone())
     }
 
-    /// Check if placing a stone would violate the simple ko rule.
-    /// Ko = position is identical to the position 2 moves ago (grandparent).
-    pub fn violates_ko_rule(&self, data: &BoardData) -> bool {
-        let head = self.head.borrow();
-        match head.previous() {
-            Some(parent) => {
-                let parent_borrowed = parent.borrow();
-                match parent_borrowed.previous() {
-                    Some(grandparent) => data.zobrist == grandparent.borrow().data.zobrist,
-                    None => false,
-                }
-            }
-            None => false,
-        }
-    }
-
-    /// Check if placing a stone would violate the superko rule.
-    /// Superko = same position (hash + whose turn) has occurred before in the game.
-    pub fn violates_superko(&self, data: &BoardData) -> bool {
+    /// Check if placing a stone would repeat an earlier board shape with the same player to move.
+    pub fn violates_repetition(&self, data: &BoardData) -> bool {
         let mut current = Some(self.head.clone());
         while let Some(node) = current {
             let node_borrowed = node.borrow();
@@ -616,19 +599,16 @@ impl BoardHistoryList {
             return PlaceResult::IllegalOccupied;
         }
 
-        // Place tentatively
-        let result = board.place_stone(x, y, None);
+        // Apply local board rules tentatively, then enforce history-dependent repetition.
+        let result = board.place_stone(x, y);
         match result {
             PlaceResult::Legal => {
-                // Check ko
                 let new_data = board.to_data();
-                if self.violates_ko_rule(&new_data) {
-                    // Undo the move on the board
+                if self.violates_repetition(&new_data) {
                     *board = Board::from_data(&self.get_data());
                     return PlaceResult::IllegalKo;
                 }
 
-                // Legal move — add to history
                 self.add_or_goto(new_data, new_branch);
                 BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::One, MatchSettings::default());
                 BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::Two, MatchSettings::default());
@@ -644,9 +624,10 @@ impl BoardHistoryList {
 
     /// Pass move, creating a new history node.
     pub fn pass_move(&mut self, board: &mut Board) {
+        *board = Board::from_data(&self.get_data());
         board.pass();
         let new_data = board.to_data();
-        let new_branch = self.head.borrow().next().is_some();
+        let new_branch = self.head.borrow().number_of_children() > 0;
         self.add_or_goto(new_data, new_branch);
         BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::One, MatchSettings::default());
         BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::Two, MatchSettings::default());
@@ -681,6 +662,24 @@ mod tests {
             score_mean: 0.0,
             ..MoveData::default()
         }
+    }
+
+    fn history_from_board(board: Board) -> (Board, BoardHistoryList) {
+        let history = BoardHistoryList::new(board.to_data());
+        (board, history)
+    }
+
+    fn ko_capture_position() -> (Board, BoardHistoryList) {
+        let mut board = Board::new(5);
+        board.add_stone(1, 0, Stone::Black);
+        board.add_stone(0, 1, Stone::Black);
+        board.add_stone(1, 2, Stone::Black);
+        board.add_stone(1, 1, Stone::White);
+        board.add_stone(2, 0, Stone::White);
+        board.add_stone(3, 1, Stone::White);
+        board.add_stone(2, 2, Stone::White);
+        board.current_player = Stone::Black;
+        history_from_board(board)
     }
 
     #[test]
@@ -883,15 +882,45 @@ mod tests {
     }
 
     #[test]
-    fn test_ko_violation() {
-        // Set up a ko position
-        let board = Board::new(9);
-        // Simplified: just test the mechanism, full ko scenarios are complex
-        let data = board.to_data();
-        let history = BoardHistoryList::new(data);
-        // No ko at start
-        let test_data = board.to_data();
-        assert!(!history.violates_ko_rule(&test_data));
+    fn test_immediate_ko_recapture_is_illegal() {
+        let (mut board, mut history) = ko_capture_position();
+
+        assert_eq!(history.place(&mut board, 2, 1, Stone::Black, false), PlaceResult::Legal);
+        assert_eq!(board.get(1, 1), Stone::Empty);
+        assert_eq!(board.black_captures, 1);
+
+        assert_eq!(history.place(&mut board, 1, 1, Stone::White, false), PlaceResult::IllegalKo);
+        assert_eq!(history.get_move_number(), 1);
+        assert_eq!(board.get(2, 1), Stone::Black);
+        assert_eq!(board.current_player, Stone::White);
+    }
+
+    #[test]
+    fn test_ko_recapture_after_intervening_moves_is_legal() {
+        let (mut board, mut history) = ko_capture_position();
+
+        assert_eq!(history.place(&mut board, 2, 1, Stone::Black, false), PlaceResult::Legal);
+        assert_eq!(history.place(&mut board, 4, 4, Stone::White, false), PlaceResult::Legal);
+        assert_eq!(history.place(&mut board, 4, 3, Stone::Black, false), PlaceResult::Legal);
+        assert_eq!(history.place(&mut board, 1, 1, Stone::White, false), PlaceResult::Legal);
+        assert_eq!(board.get(2, 1), Stone::Empty);
+        assert_eq!(board.white_captures, 1);
+    }
+
+    #[test]
+    fn test_pass_preserves_zobrist_and_advances_turn() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        assert_eq!(history.place(&mut board, 3, 3, Stone::Black, false), PlaceResult::Legal);
+        let before = history.get_data();
+
+        history.pass_move(&mut board);
+        let after = history.get_data();
+
+        assert_eq!(after.zobrist, before.zobrist);
+        assert_ne!(after.black_to_play, before.black_to_play);
+        assert_eq!(after.move_number, before.move_number + 1);
+        assert_eq!(after.last_move, None);
     }
 
     #[test]

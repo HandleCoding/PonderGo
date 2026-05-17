@@ -9,6 +9,8 @@ use std::thread::JoinHandle;
 use log::{debug, error, info, warn};
 
 use crate::engine::move_data::MoveData;
+use crate::go::board::coord_to_name;
+use crate::go::stone::Stone;
 
 // ---------------------------------------------------------------------------
 // Engine type flags
@@ -549,6 +551,39 @@ impl GtpEngine {
         }
     }
 
+    pub fn sync_position(&self, board_size: usize, komi: f64, stones: &[Stone], black_to_play: bool) {
+        let was_pondering = self.is_pondering();
+        if was_pondering {
+            self.stop_ponder();
+        }
+
+        self.boardsize(board_size);
+        self.komi(komi);
+        self.clear_board();
+        for y in 0..board_size {
+            for x in 0..board_size {
+                let Some(stone) = stones.get(y * board_size + x) else {
+                    continue;
+                };
+                let color = match stone {
+                    Stone::Black => "B",
+                    Stone::White => "W",
+                    Stone::Empty => continue,
+                };
+                self.play_move(color, &coord_to_name(x, y, board_size));
+            }
+        }
+
+        let mut state = self.state.lock().unwrap();
+        state.best_moves.clear();
+        state.current_total_playouts = 0;
+        drop(state);
+
+        if was_pondering {
+            self.ponder_with_player(black_to_play);
+        }
+    }
+
     /// Undo the last move.
     pub fn undo(&self) {
         self.send_command("undo");
@@ -670,6 +705,7 @@ impl GtpEngine {
         coords: &str,
         until_move: i32,
         black_to_play: bool,
+        applies_to: &str,
     ) {
         let et = self.engine_type();
         let cmd = et.analyze_command();
@@ -684,10 +720,14 @@ impl GtpEngine {
         } else {
             ""
         };
-        let params = format!(
-            "{} b {} {} {} w {} {}",
-            restriction_type, coords, until_move, restriction_type, coords, until_move
-        );
+        let params = match applies_to {
+            "black" => format!("{} b {} {}", restriction_type, coords, until_move),
+            "white" => format!("{} w {} {}", restriction_type, coords, until_move),
+            _ => format!(
+                "{} b {} {} {} w {} {}",
+                restriction_type, coords, until_move, restriction_type, coords, until_move
+            ),
+        };
         self.send_command(&format!(
             "{} {}{} {}{}",
             cmd, player, interval, params, kata_tags
@@ -695,6 +735,19 @@ impl GtpEngine {
 
         let mut state = self.state.lock().unwrap();
         state.is_pondering = true;
+    }
+
+    pub fn set_analyze_interval_cs(&mut self, value: i32) {
+        self.config.analyze_interval_cs = value.max(1);
+    }
+
+    pub fn analyze_interval_cs(&self) -> i32 {
+        self.config.analyze_interval_cs
+    }
+
+    pub fn supports_point_constraints(&self) -> bool {
+        let et = self.engine_type();
+        et.is_katago && !et.no_analyze
     }
 
     // -----------------------------------------------------------------------

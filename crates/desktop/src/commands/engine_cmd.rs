@@ -3,6 +3,7 @@ use tauri::{Emitter, Manager, State};
 
 use ponder_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
 use ponder_core::engine::move_data::MoveData;
+use ponder_core::go::board::coord_to_name;
 use ponder_core::go::board_history::EngineSlot;
 use ponder_core::go::stone::Stone;
 use crate::AppState;
@@ -70,6 +71,25 @@ pub struct StartEngineRequest {
     pub command: String,
     pub initial_commands: Option<String>,
     pub analyze_interval_cs: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RuntimeEngineParams {
+    pub analyze_interval_cs: i32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AnalysisPoint {
+    pub x: usize,
+    pub y: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AnalysisConstraintRequest {
+    pub mode: String,
+    pub points: Vec<AnalysisPoint>,
+    pub applies_to: String,
+    pub until_move: Option<i32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +319,71 @@ pub fn get_analysis(state: State<AppState>) -> Result<AnalysisData, String> {
 #[tauri::command]
 pub fn get_analysis_overview(state: State<AppState>) -> AnalysisOverview {
     analysis_overview_from_history(&state, EngineSlot::One)
+}
+
+#[tauri::command]
+pub fn get_engine_runtime_params(state: State<AppState>) -> RuntimeEngineParams {
+    let engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    RuntimeEngineParams {
+        analyze_interval_cs: engine_guard.as_ref().map(|engine| engine.analyze_interval_cs()).unwrap_or(10),
+    }
+}
+
+#[tauri::command]
+pub fn set_engine_runtime_params(params: RuntimeEngineParams, state: State<AppState>) -> Result<RuntimeEngineParams, String> {
+    let mut engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    match engine_guard.as_mut() {
+        Some(engine) => {
+            engine.set_analyze_interval_cs(params.analyze_interval_cs);
+            Ok(RuntimeEngineParams { analyze_interval_cs: engine.analyze_interval_cs() })
+        }
+        None => Err("No engine running".to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn reset_engine_runtime_params(state: State<AppState>) -> Result<RuntimeEngineParams, String> {
+    set_engine_runtime_params(RuntimeEngineParams { analyze_interval_cs: 10 }, state)
+}
+
+#[tauri::command]
+pub fn analyze_with_constraints(request: AnalysisConstraintRequest, state: State<AppState>) -> Result<(), String> {
+    let engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(engine) = engine_guard.as_ref() else {
+        return Err("No engine running".to_string());
+    };
+    if !engine.supports_point_constraints() {
+        return Err("Point constraints require KataGo analysis support".to_string());
+    }
+    if request.points.is_empty() {
+        return Err("Select at least one point".to_string());
+    }
+    let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+    let coords = request.points.iter()
+        .map(|point| coord_to_name(point.x, point.y, board.size))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mode = if request.mode == "avoid" { "avoid" } else { "allow" };
+    let applies_to = match request.applies_to.as_str() {
+        "black" => "black",
+        "white" => "white",
+        _ => "both",
+    };
+    engine.analyze_avoid(mode, &coords, request.until_move.unwrap_or(999), board.current_player == Stone::Black, applies_to);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_analysis_constraints(state: State<AppState>) -> Result<(), String> {
+    let engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    match engine_guard.as_ref() {
+        Some(engine) => {
+            let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+            engine.ponder_with_player(board.current_player == Stone::Black);
+            Ok(())
+        }
+        None => Err("No engine running".to_string()),
+    }
 }
 
 fn analysis_overview_from_history(state: &State<AppState>, slot: EngineSlot) -> AnalysisOverview {

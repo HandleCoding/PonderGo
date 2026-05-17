@@ -7,6 +7,7 @@
     board,
     analysis = null,
     previewMove = null,
+    selectedPoints = [],
     onCellClick,
     onPreviewMove,
     onClearPreview,
@@ -15,6 +16,7 @@
     board: BoardState;
     analysis?: AnalysisData | null;
     previewMove?: MoveData | null;
+    selectedPoints?: Array<[number, number]>;
     onCellClick?: (x: number, y: number) => void;
     onPreviewMove?: (move: MoveData) => void;
     onClearPreview?: () => void;
@@ -48,4 +50,4 @@
   });
 </script>
 
-<BoardCanvas {board} {analysis} {previewMove} {onCellClick} {onPreviewMove} {onClearPreview} {boardPx} />
+<BoardCanvas {board} {analysis} {previewMove} {selectedPoints} {onCellClick} {onPreviewMove} {onClearPreview} {boardPx} />

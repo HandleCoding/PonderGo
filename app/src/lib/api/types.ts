@@ -1,5 +1,12 @@
 // Types matching Rust structs for type-safe API communication
 
+export interface BoardMarkup {
+  x: number;
+  y: number;
+  kind: 'label' | 'circle' | 'square' | 'triangle' | 'cross';
+  text: string | null;
+}
+
 export interface BoardState {
   size: number;
   stones: StoneColor[][];
@@ -9,6 +16,7 @@ export interface BoardState {
   black_captures: number;
   white_captures: number;
   komi: number;
+  markup: BoardMarkup[];
 }
 
 export type StoneColor = 'BLACK' | 'WHITE' | 'EMPTY';
@@ -69,6 +77,22 @@ export interface AnalysisOverview {
   total_playouts: number;
   black_match_percent: number | null;
   white_match_percent: number | null;
+}
+
+export interface RuntimeEngineParams {
+  analyze_interval_cs: number;
+}
+
+export interface AnalysisConstraintPoint {
+  x: number;
+  y: number;
+}
+
+export interface AnalysisConstraintRequest {
+  mode: 'allow' | 'avoid';
+  points: AnalysisConstraintPoint[];
+  applies_to: 'black' | 'white' | 'both';
+  until_move?: number;
 }
 
 export interface SgfResult {
