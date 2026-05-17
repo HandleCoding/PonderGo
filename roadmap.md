@@ -6,22 +6,26 @@ LizzieYzy 当前基于 Java Swing，117k 行代码中 75% 是 UI 渲染逻辑。
 
 ---
 
-## 当前进展快照（2026-05-16）
+## 当前进展快照（2026-05-17）
 
 ### 已完成
 
 - **项目骨架**：Tauri 2.x + Rust workspace + Svelte 5 前端已经跑通，桌面端通过统一 `ApiClient` 调 Tauri invoke。
 - **围棋基础链路**：棋盘状态、落子、Pass、Undo、前进/后退、跳转、编辑模式 add/remove stone、棋谱路径读取已接入。
 - **SGF 基础能力**：Rust 端已有 `load_sgf` / `save_sgf`，前端已接入 Tauri dialog/fs 插件，Open/Save SGF 按钮不再是空实现。
-- **引擎基础能力**：Rust/Tauri 端已有 engine1/engine2 启停、ponder、genmove、analysis event；前端已增加引擎配置入口和 Start/Stop/Ponder/Genmove 控制入口。
-- **配置系统基础**：Rust 端 `AppConfig` 持久化已存在，前端已补 `getConfig/saveConfig` 类型和 client 方法。
+- **引擎基础能力**：Rust/Tauri 端已有 engine1/engine2 启停、独立 ponder、genmove、analysis event；前端已支持单引擎/双引擎布局、Engine 1/2 各自启停与分析展示、棋盘推荐来源切换。
+- **配置系统基础**：Rust 端 `AppConfig` 持久化已存在，并已统一到 Tauri app data dir；前端已补 `getConfig/saveConfig` 类型和 client 方法，Engine profiles 使用稳定 ID。
 - **首页产品化第一轮**：主页保留大棋盘布局，右侧 Engine/Winrate/Preview/Comment/MoveList 结构完成；明显未实现按钮已禁用，不再“点了没反应”。
-- **设置面板第一版**：新增现代 Settings Dialog，包含 General / Engines / Board / Theme 分类，支持暗色主题、棋盘显示选项和 engine profiles 编辑。
-- **验证状态**：`npm --prefix app run check`、`npm --prefix app run build`、`cargo check` 已通过；剩余 Svelte 警告主要来自既有 layout 组件初始化写法。
+- **设置面板第一版**：新增现代 Settings Dialog，包含 General / Engines / Board / Theme 分类，支持暗色主题、棋盘显示选项和 engine profile 元数据编辑。
+- **Engine profile / slot 选择完成**：Settings > Engines 只管理可复用 profile 元数据；首页 Engine 1 / Engine 2 各自通过独立 picker 选择实际加载的 profile，选择结果持久化且不会被 profile 列表顺序影响。
+- **Yzy 风格分析展示第一轮**：候选点、PV hover 预览、分段彩色路线、箭头、序号、halo、距离过近省略连线、棋盘留白优化已完成。
+- **声音资源第一轮**：已迁移并接入落子/提子等棋盘音效，Tauri dev 资源路径已验证。
+- **配置迁移**：旧 `pondergo` / `PonderGo` 配置会迁移到当前 app data dir，避免开发路径和打包安装后的配置目录不一致。
+- **验证状态**：`npm --prefix app run check` 已通过；剩余 Svelte 警告主要来自既有 layout 组件初始化写法。当前 shell 暂时找不到 `cargo`，Rust check 需要在 cargo 可用的环境补跑。
 
 ### 当前短板
 
-- **引擎主链路还需要实测打通**：配置 engine command 后启动、收到 analysis、候选点/胜率图实时更新这条链路需要下一轮重点验证和修补。
+- **引擎主链路需要继续实测**：Engine 1/2 已能分别绑定 profile 并启动独立 analysis，但仍需持续验证不同 KataGo 配置、不同权重、双引擎长期运行稳定性。
 - **SGF 文件流需要桌面端实测**：Open/Save 已接线，但仍需在 Tauri app 中验证权限、路径、dirty 状态、文件名状态栏表现。
 - **设置项还只是骨架**：Yzy 的大量分析/显示/规则/主题选项还未抽象成可持久化配置。
 - **变化树/评论仍偏只读**：MoveList 现在能导航，但 Add/Delete/Flatten 暂未实现；Comment 区还不是 SGF comment 编辑器。
@@ -310,21 +314,26 @@ export function createClient(): ApiClient {
 
 ---
 
-## 近期执行计划（更新于 2026-05-16）
+## 近期执行计划（更新于 2026-05-17）
 
 ### P0：打通核心使用闭环
 
-1. **引擎配置 → 启动 → 分析显示**
-   - 完善 Settings / Engines：默认引擎、命令行校验、启动失败错误展示。
-   - 实测 `start_engine` / `engine:analysis` / `stop_engine` 全链路。
-   - 确认候选点 overlay、EnginePanel、WinrateGraph 能随分析数据同步刷新。
+1. **双引擎 Profile 工作流稳定化**
+   - 已完成 Settings profile 元数据管理与首页 Engine 1/2 slot 选择分离。
+   - 继续实测 profile 编辑、删除、重启 app 后 slot 选择恢复、同一 profile 绑定两个 slot 等边界场景。
+   - 补齐启动失败、空 command、profile 被删除后的提示文案和错误状态。
 
-2. **SGF 打开/保存桌面实测**
+2. **引擎启动 → 分析显示长期验证**
+   - 实测不同 KataGo 权重/配置同时运行时的 engine1/engine2 独立性。
+   - 确认 `start_engine` / `start_engine2`、`engine:analysis` / `engine2:analysis`、`stop_engine` / `stop_engine2` 全链路稳定。
+   - 确认候选点 overlay、EnginePanel、WinrateGraph、棋盘推荐来源切换能随分析数据同步刷新。
+
+3. **SGF 打开/保存桌面实测**
    - 用 Tauri 桌面端验证 native open/save dialog 和 fs 权限。
    - 打开 SGF 后刷新 board/tree/statusbar；保存后清除 dirty 标记。
    - 处理取消选择、解析失败、写入失败的 UI 错误提示。
 
-3. **首页右侧工作台二次 polish**
+4. **首页右侧工作台二次 polish**
    - 进一步统一 Engine / Graph / Preview / Comment / MoveList 的 card header、空状态和 CTA。
    - 没配置引擎时只保留一个主入口，避免重复配置按钮。
    - 减少空框感，让首页看起来像“等待分析的工作台”而不是未完成页面。
@@ -492,7 +501,7 @@ export function createClient(): ApiClient {
   - `get_engine_status` — 引擎状态 ✅ 已有
   - `get_analysis` — 获取当前分析数据（MoveData列表）✅ 已有
   - `toggle_ponder` — 开关 pondering ✅ 已有
-  - `start_engine2` / `stop_engine2` / `get_analysis2` — 双引擎基础命令 ✅ 已有
+  - `start_engine2` / `stop_engine2` / `get_engine2_status` / `toggle_ponder2` / `get_analysis2` — 第二引擎独立启停、ponder 和分析数据 ✅ 已有
 - [x] `commands/sgf_cmd.rs` — SGF文件命令
   - `load_sgf` — 加载SGF ✅ 已有基础版本
   - `save_sgf` — 保存SGF ✅ 已有基础版本
@@ -519,11 +528,14 @@ export function createClient(): ApiClient {
   - 当前visits/playouts
   - 最佳着手列表
   - 启停/ponder/genmove 控制入口
+  - 首页 profile 选择入口，Engine 1/2 slot 可绑定不同 engine profile
 - [x] `App.svelte` — 主布局
   - 左：棋盘
   - 右：引擎信息 + 胜率图 + Preview + Comment + MoveList
   - 键盘快捷键（方向键导航等）
   - Settings Dialog / SGF Open-Save / Window controls 接入
+  - EngineProfilePicker 接入，Engine 1/2 profile slot 选择持久化
+  - 双引擎布局与棋盘推荐来源切换接入
 - [x] `api/` — Tauri invoke 封装
   - 封装所有 Rust 命令调用
   - 类型安全
@@ -556,14 +568,20 @@ export function createClient(): ApiClient {
   - `create_branch` — 创建分支
   - `goto_node` — 跳转到指定节点
 
-#### 2.2 双引擎模式
+#### 2.2 双引擎模式 ✅ 基础完成，继续稳定化
 
-- [ ] Rust：多引擎实例管理
-  - `start_second_engine` — 启动第二引擎
+- [x] Rust：多引擎实例管理
+  - `start_engine2` — 启动第二引擎
+  - `stop_engine2` / `get_engine2_status` / `toggle_ponder2`
   - `get_analysis2` — 第二引擎分析数据
-- [ ] 前端：双引擎对比视图
-  - 第二列建议显示
-  - 对比胜率差
+- [x] 前端：双引擎对比视图基础版
+  - Engine 区单引擎保持原布局，双引擎开启后左右双列显示
+  - Engine 1 / Engine 2 各自选择 profile 元数据
+  - 棋盘推荐来源可在 Engine 1 / Engine 2 分析间切换
+- [ ] 后续稳定化
+  - 长时间双引擎运行测试
+  - 对比胜率差和更明确的双引擎差异视图
+  - profile 删除/命令为空/启动失败的细节提示继续 polish
 
 #### 2.3 引擎对局
 
@@ -592,10 +610,12 @@ export function createClient(): ApiClient {
 
 - [x] Rust：配置管理
   - JSON配置文件读写
-  - 引擎配置（名称、命令行、初始命令、分析间隔）
+  - 引擎 profile 配置（稳定 ID、名称、命令行、初始命令、分析间隔）
   - UI偏好基础字段
+  - 配置统一保存在 Tauri app data dir，并从旧 `pondergo` / `PonderGo` 路径迁移
 - [x] 前端：设置页面第一版
-  - 引擎配置面板
+  - 引擎 profile 元数据管理面板
+  - 首页 Engine 1/2 profile picker 与 slot 选择持久化
   - Board/Theme/General 基础偏好面板
 - [ ] 后续扩展
   - Analysis settings（候选点数量、显示胜率/计算量/目数、分析限制）
