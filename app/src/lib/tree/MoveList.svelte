@@ -8,8 +8,6 @@
     onNavigate?: (path: number[]) => void;
   } = $props();
 
-  let viewMode = $state<'list' | 'tree'>('list');
-
   const currentIndex = $derived(Math.max(0, treePath.findIndex((node) => node.is_current)));
   const currentPath = $derived(treePath[currentIndex]?.path ?? []);
   const listNodes = $derived(treePath.filter((node) => isListNode(node, currentPath)));
@@ -53,84 +51,43 @@
 
 <div class="movelist-card">
   <div class="card-header">
-    <div class="tabs">
-      <button class="tab" class:active={viewMode === 'list'} onclick={() => viewMode = 'list'}>Move List</button>
-      <button class="tab" class:active={viewMode === 'tree'} onclick={() => viewMode = 'tree'}>Variation Tree</button>
+    <div class="panel-title">
+      <span>Variation Tree</span>
+      <small>{listNodes.length} moves</small>
     </div>
     <div class="view-toggle">
       <button class="view-btn nav-step" onclick={() => navigateToIndex(listCurrentIndex - 1)} disabled={!canGoBack} title="Previous move">‹</button>
       <button class="view-btn nav-step" onclick={() => navigateToIndex(listCurrentIndex + 1)} disabled={!canGoForward} title="Next move">›</button>
       <button class="view-btn latest-btn" onclick={() => navigateToIndex(listNodes.length - 1)} disabled={!canGoLatest} title="Go to latest move">Latest</button>
       <div class="tb-sep"></div>
-      <button class="view-btn" class:active={viewMode === 'list'} onclick={() => viewMode = 'list'} title="List view">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      </button>
-      <button class="view-btn" class:active={viewMode === 'tree'} onclick={() => viewMode = 'tree'} title="Tree view">
+      <button class="view-btn" title="Tree view" aria-label="Tree view">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="19" cy="12" r="3"/><circle cx="5" cy="19" r="3"/><line x1="12" y1="8" x2="19" y2="9"/><line x1="12" y1="8" x2="5" y2="16"/></svg>
-      </button>
-      <div class="tb-sep"></div>
-      <button class="view-btn" title="Add variation is not implemented yet" disabled>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-      <button class="view-btn" title="Delete branch is not implemented yet" disabled>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-      </button>
-      <button class="view-btn" title="Flatten is not implemented yet" disabled>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
       </button>
     </div>
   </div>
 
-  {#if viewMode === 'list'}
-    <div class="move-flow">
-      {#each listNodes as node, i}
-        {#if i > 0}
-          <span class="flow-sep"></span>
+  <div class="tree-view">
+    {#each treePath as node}
+      <button
+        class="tree-node"
+        class:current={node.is_current}
+        class:variation={node.variation_index > 0}
+        class:black={node.is_black}
+        class:white={!node.is_black && node.move_number > 0}
+        style={branchStyle(node)}
+        onclick={() => navigateToNode(node)}
+      >
+        <span class="node-connector"></span>
+        <span class="node-dot"></span>
+        <span class="node-label">{node.move_number > 0 ? moveLabel(node) : 'Start'}</span>
+        {#if node.variation_index > 0}
+          <span class="node-branch">{variationLabel(node)}</span>
+        {:else if node.variation_count > 1}
+          <span class="node-branch">+{node.variation_count - 1}</span>
         {/if}
-        <button
-          class="move-chip"
-          class:current={node.is_current}
-          class:variation={node.variation_index > 0}
-          class:black={node.is_black}
-          class:white={!node.is_black && node.move_number > 0}
-          onclick={() => navigateToNode(node)}
-          title={node.comment || `Move ${node.move_number}`}
-        >
-          <span class="chip-num">{node.move_number}</span>
-          <span class="chip-dot" class:black-dot={node.is_black} class:white-dot={!node.is_black && node.move_number > 0}></span>
-          <span class="chip-coord">{moveLabel(node)}</span>
-          {#if node.variation_index > 0}
-            <span class="chip-branch">{variationLabel(node)}</span>
-          {:else if node.variation_count > 1}
-            <span class="chip-branch">+{node.variation_count - 1}</span>
-          {/if}
-        </button>
-      {/each}
-    </div>
-  {:else}
-    <div class="tree-view">
-      {#each treePath as node}
-        <button
-          class="tree-node"
-          class:current={node.is_current}
-          class:variation={node.variation_index > 0}
-          class:black={node.is_black}
-          class:white={!node.is_black && node.move_number > 0}
-          style={branchStyle(node)}
-          onclick={() => navigateToNode(node)}
-        >
-          <span class="node-connector"></span>
-          <span class="node-dot"></span>
-          <span class="node-label">{node.move_number > 0 ? moveLabel(node) : 'Start'}</span>
-          {#if node.variation_index > 0}
-            <span class="node-branch">{variationLabel(node)}</span>
-          {:else if node.variation_count > 1}
-            <span class="node-branch">+{node.variation_count - 1}</span>
-          {/if}
-        </button>
-      {/each}
-    </div>
-  {/if}
+      </button>
+    {/each}
+  </div>
 </div>
 
 <style>
@@ -168,28 +125,22 @@
     border-bottom-color: rgba(15, 23, 42, 0.08);
   }
 
-  .tabs {
+  .panel-title {
     display: flex;
-    gap: 2px;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
   }
 
-  .tab {
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
-    font-size: 11px;
-    color: var(--text-muted);
-    transition: all 0.1s;
-  }
-
-  .tab:hover {
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-  }
-
-  .tab.active {
+  .panel-title span {
     color: var(--text-primary);
-    background: rgba(14, 165, 233, 0.1);
-    box-shadow: inset 0 -1px 0 var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .panel-title small {
+    color: var(--text-muted);
+    font-size: 10px;
   }
 
   .view-toggle {
@@ -227,10 +178,6 @@
     background: var(--bg-tertiary);
   }
 
-  .view-btn.active {
-    color: var(--accent);
-  }
-
   .nav-step {
     min-width: 24px;
     font-size: 15px;
@@ -248,133 +195,6 @@
   .latest-btn:not(:disabled) {
     background: rgba(14, 165, 233, 0.14);
     color: var(--accent);
-  }
-
-  /* List view - horizontal flow */
-  .move-flow {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    padding: 10px 12px;
-    flex: 1;
-    min-height: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .flow-sep {
-    display: block;
-    width: 18px;
-    height: 2px;
-    background: var(--border);
-    flex: 0 0 auto;
-    opacity: 0.9;
-  }
-
-  .move-chip {
-    position: relative;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    min-width: 42px;
-    height: 46px;
-    padding: 4px 8px;
-    border-radius: var(--radius-md);
-    background: rgba(148, 163, 184, 0.08);
-    border: 1px solid rgba(148, 163, 184, 0.1);
-    font-size: 11px;
-    color: var(--text-secondary);
-    transition: all 0.1s;
-    white-space: nowrap;
-    flex: 0 0 auto;
-  }
-
-  .move-chip:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .move-chip.current {
-    background: rgba(14, 165, 233, 0.11);
-    border-color: rgba(14, 165, 233, 0.28);
-    color: var(--accent);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset;
-  }
-
-  .move-chip.current::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    bottom: -5px;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent);
-    transform: translateX(-50%);
-  }
-
-  .move-chip.variation {
-    border-color: rgba(234, 179, 8, 0.45);
-    background: rgba(234, 179, 8, 0.1);
-  }
-
-  .move-chip.variation::before {
-    content: '';
-    position: absolute;
-    top: -7px;
-    left: 50%;
-    width: 1px;
-    height: 7px;
-    background: rgba(234, 179, 8, 0.65);
-  }
-
-  .chip-num {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-muted);
-    min-width: 0;
-    text-align: center;
-  }
-
-  .move-chip.current .chip-num {
-    color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
-  }
-
-  .chip-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .chip-dot.black-dot {
-    background: var(--text-primary);
-  }
-
-  .chip-dot.white-dot {
-    background: transparent;
-    border: 1px solid var(--text-secondary);
-  }
-
-  .move-chip.current .chip-dot.white-dot {
-    border-color: #fff;
-  }
-
-  .chip-coord {
-    font-family: var(--font-mono);
-    font-weight: 500;
-  }
-
-  .chip-branch {
-    font-size: 9px;
-    color: var(--yellow);
-    font-weight: 600;
-  }
-
-  .move-chip.current .chip-branch {
-    color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   }
 
   /* Tree view */

@@ -98,7 +98,7 @@
   </div>
 
   <div class="chart-area">
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Winrate and score history">
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Winrate and score history">
       <rect class="plot-bg" x={pad.left} y={pad.top} width={plotWidth} height={plotHeight} />
 
       {#each [100, 90, 60, 30, 0] as value}
@@ -263,12 +263,16 @@
     flex: 1;
     min-height: 0;
     padding: 6px 8px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   svg {
     width: 100%;
-    height: 100%;
+    height: min(100%, 250px);
     min-height: 150px;
+    max-height: 250px;
     display: block;
   }
 
