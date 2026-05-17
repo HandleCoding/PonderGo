@@ -10,6 +10,8 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineEntry {
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     pub command: String,
     pub initial_commands: String,

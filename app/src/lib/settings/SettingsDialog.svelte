@@ -1,15 +1,17 @@
 <script lang="ts">
   import Dialog from '../components/Dialog.svelte';
-  import type { AppConfig, EngineEntry } from '../api/types';
-  import { defaultAppConfig } from '../api/types';
+  import type { AppConfig } from '../api/types';
+  import { createEngineProfileId } from '../state/engine-profiles';
 
   let {
     open = false,
     config,
+    initialTab = 'general',
     onSave,
     onClose,
   }: {
     open?: boolean;
+    initialTab?: 'general' | 'engine' | 'board' | 'theme';
     config: AppConfig;
     onSave?: (config: AppConfig) => void;
     onClose?: () => void;
@@ -17,34 +19,44 @@
 
   const defaultKatagoCommand = '/opt/homebrew/bin/katago gtp -config "/opt/homebrew/Cellar/katago/1.16.4/share/katago/configs/gtp_example.cfg" -model "/opt/homebrew/Cellar/katago/1.16.4/share/katago/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz"';
 
-  let activeTab = $state<'general' | 'engine' | 'board' | 'theme'>('general');
-  let draft = $state<AppConfig>(defaultAppConfig());
-
-  $effect(() => {
-    if (open) draft = structuredClone(config);
-  });
-
-  function updateUi<K extends keyof AppConfig['ui']>(key: K, value: AppConfig['ui'][K]) {
-    draft = { ...draft, ui: { ...draft.ui, [key]: value } };
-  }
-
-  function updateEngine(index: number, patch: Partial<EngineEntry>) {
-    const engines = draft.engines.map((engine, i) => i === index ? { ...engine, ...patch } : engine);
-    draft = { ...draft, engines };
-  }
-
-  function addEngine() {
-    draft = {
-      ...draft,
-      engines: [
-        ...draft.engines,
-        { name: 'KataGo', command: defaultKatagoCommand, initial_commands: '', analyze_interval_cs: 10 },
-      ],
+  function cloneConfig(source: AppConfig): AppConfig {
+    return {
+      engines: source.engines.map((engine) => ({ ...engine })),
+      ui: { ...source.ui },
     };
   }
 
+  function createEmptyConfig(): AppConfig {
+    return {
+      engines: [],
+      ui: {
+        board_size: 19,
+        show_coordinates: true,
+        show_move_numbers: false,
+        show_winrate_colors: true,
+        dark_mode: true,
+      },
+    };
+  }
+
+  let activeTab = $state<'general' | 'engine' | 'board' | 'theme'>('general');
+  let draft = $state<AppConfig>(createEmptyConfig());
+  let wasOpen = $state(false);
+
+  $effect(() => {
+    if (open && !wasOpen) {
+      activeTab = initialTab;
+      draft = cloneConfig(config);
+    }
+    wasOpen = open;
+  });
+
+  function addEngine() {
+    draft.engines.push({ id: createEngineProfileId(), name: 'KataGo', command: defaultKatagoCommand, initial_commands: '', analyze_interval_cs: 10 });
+  }
+
   function removeEngine(index: number) {
-    draft = { ...draft, engines: draft.engines.filter((_, i) => i !== index) };
+    draft.engines.splice(index, 1);
   }
 </script>
 
@@ -63,7 +75,7 @@
           <h3>General</h3>
           <div class="settings-card">
             <label class="field inline">
-              <input type="checkbox" checked={draft.ui.dark_mode} onchange={(e) => updateUi('dark_mode', e.currentTarget.checked)} />
+              <input type="checkbox" bind:checked={draft.ui.dark_mode} />
               <span>
                 <strong>Use dark theme</strong>
                 <small>Use the dark professional workspace theme by default.</small>
@@ -80,35 +92,35 @@
           <div class="section-header">
             <div>
               <h3>Engine Profiles</h3>
-              <p class="hint">Configure command lines used by the analysis panel.</p>
+              <p class="hint">Manage reusable engine metadata. Choose which profile each home-screen engine slot loads from the main panel.</p>
             </div>
-            <button class="primary" onclick={addEngine}>Add Engine</button>
+            <button class="primary" onclick={addEngine}>Add Profile</button>
           </div>
           {#if draft.engines.length === 0}
-            <div class="empty-box">No engines configured yet.</div>
+            <div class="empty-box">No engine profiles configured yet.</div>
           {:else}
             <div class="engine-list">
-              {#each draft.engines as engine, i}
+              {#each draft.engines as engine, i (engine.id)}
                 <article class="engine-card">
                   <div class="engine-card-header">
-                    <strong>Engine {i + 1}</strong>
+                    <strong>Profile {i + 1}</strong>
                     <button class="danger" onclick={() => removeEngine(i)}>Remove</button>
                   </div>
                   <label class="field">
                     <span>Name</span>
-                    <input value={engine.name} oninput={(e) => updateEngine(i, { name: e.currentTarget.value })} />
+                    <input bind:value={engine.name} />
                   </label>
                   <label class="field">
                     <span>Command</span>
-                    <input value={engine.command} placeholder={defaultKatagoCommand} oninput={(e) => updateEngine(i, { command: e.currentTarget.value })} />
+                    <input bind:value={engine.command} placeholder={defaultKatagoCommand} />
                   </label>
                   <label class="field">
                     <span>Initial commands</span>
-                    <textarea value={engine.initial_commands} placeholder="One GTP command per line" oninput={(e) => updateEngine(i, { initial_commands: e.currentTarget.value })}></textarea>
+                    <textarea bind:value={engine.initial_commands} placeholder="One GTP command per line"></textarea>
                   </label>
                   <label class="field small">
                     <span>Analyze interval (cs)</span>
-                    <input type="number" min="1" value={engine.analyze_interval_cs} oninput={(e) => updateEngine(i, { analyze_interval_cs: Number(e.currentTarget.value) || 10 })} />
+                    <input type="number" min="1" bind:value={engine.analyze_interval_cs} />
                   </label>
                 </article>
               {/each}
@@ -121,7 +133,7 @@
           <div class="settings-card">
             <label class="field small">
               <span>Default board size</span>
-              <select value={draft.ui.board_size} onchange={(e) => updateUi('board_size', Number(e.currentTarget.value))}>
+              <select bind:value={draft.ui.board_size}>
                 <option value={19}>19 × 19</option>
                 <option value={13}>13 × 13</option>
                 <option value={9}>9 × 9</option>
@@ -129,9 +141,9 @@
             </label>
           </div>
           <div class="settings-card option-list">
-            <label class="field inline"><input type="checkbox" checked={draft.ui.show_coordinates} onchange={(e) => updateUi('show_coordinates', e.currentTarget.checked)} /> <span><strong>Show coordinates</strong><small>Display board coordinates around the board edge.</small></span></label>
-            <label class="field inline"><input type="checkbox" checked={draft.ui.show_move_numbers} onchange={(e) => updateUi('show_move_numbers', e.currentTarget.checked)} /> <span><strong>Show move numbers</strong><small>Overlay move numbers on stones when supported by the renderer.</small></span></label>
-            <label class="field inline"><input type="checkbox" checked={draft.ui.show_winrate_colors} onchange={(e) => updateUi('show_winrate_colors', e.currentTarget.checked)} /> <span><strong>Show winrate colors</strong><small>Use color accents for analysis hints and candidate moves.</small></span></label>
+            <label class="field inline"><input type="checkbox" bind:checked={draft.ui.show_coordinates} /> <span><strong>Show coordinates</strong><small>Display board coordinates around the board edge.</small></span></label>
+            <label class="field inline"><input type="checkbox" bind:checked={draft.ui.show_move_numbers} /> <span><strong>Show move numbers</strong><small>Overlay move numbers on stones when supported by the renderer.</small></span></label>
+            <label class="field inline"><input type="checkbox" bind:checked={draft.ui.show_winrate_colors} /> <span><strong>Show winrate colors</strong><small>Use color accents for analysis hints and candidate moves.</small></span></label>
           </div>
         </section>
       {:else}
@@ -149,7 +161,7 @@
 
       <footer class="settings-actions">
         <button onclick={onClose}>Cancel</button>
-        <button class="primary" onclick={() => onSave?.(draft)}>Save Settings</button>
+        <button class="primary" onclick={() => onSave?.(cloneConfig(draft))}>Save Settings</button>
       </footer>
     </div>
   </div>

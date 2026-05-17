@@ -38,6 +38,7 @@ export interface ApiClient {
   startEngine2(request: StartEngineRequest): Promise<void>;
   stopEngine2(): Promise<void>;
   getEngine2Status(): Promise<EngineStatus>;
+  togglePonder2(): Promise<boolean>;
   getAnalysis2(): Promise<AnalysisData>;
   onAnalysis2Update(callback: (data: AnalysisData) => void): () => void;
   onEngine2Identified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;

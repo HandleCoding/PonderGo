@@ -8,6 +8,7 @@
   import TopToolbar from './lib/toolbar/TopToolbar.svelte';
   import StatusBar from './lib/toolbar/StatusBar.svelte';
   import SettingsDialog from './lib/settings/SettingsDialog.svelte';
+  import EngineProfilePicker from './lib/settings/EngineProfilePicker.svelte';
   import EmptyState from './lib/components/EmptyState.svelte';
   import ResizableSplitter from './lib/layout/ResizableSplitter.svelte';
   import AutoResizeBoard from './lib/layout/AutoResizeBoard.svelte';
@@ -16,7 +17,8 @@
   import { isDesktop, minimizeWindow, toggleMaximizeWindow, closeWindow } from './lib/state/runtime';
   import { emptyFileState, markDirty, openSgfFile, refreshTreePath, saveSgfFile, type GameFileState } from './lib/state/game-actions';
   import { applyUiConfig, loadConfig, persistConfig } from './lib/state/config-state';
-  import { firstEngine, genmoveForCurrentPlayer, startConfiguredEngine, stopConfiguredEngine, toggleConfiguredPonder } from './lib/state/engine-actions';
+  import { genmoveForCurrentPlayer, startConfiguredEngine, startConfiguredEngine2, stopConfiguredEngine, stopConfiguredEngine2, toggleConfiguredPonder } from './lib/state/engine-actions';
+  import { needsEngineProfileIds, withEngineProfileIds } from './lib/state/engine-profiles';
   import { playSoundForBoardChange, unlockBoardSounds } from './lib/state/sound-effects';
 
   const isTauri = isDesktop;
@@ -49,16 +51,82 @@
   let config: AppConfig = $state(defaultAppConfig());
   let fileState: GameFileState = $state({ ...emptyFileState });
   let showSettings: boolean = $state(false);
+  let settingsTab: 'general' | 'engine' | 'board' | 'theme' = $state('general');
   let busyAction: string = $state('');
   let previewMove: MoveData | null = $state(null);
+  let boardAnalysisSource: number = $state(1);
+  let selectedEngine1ProfileId: string | null = $state(null);
+  let selectedEngine2ProfileId: string | null = $state(null);
+  let profilePickerSlot: 1 | 2 | null = $state(null);
+
+  const engineSlotStorageKeys = {
+    1: 'lizzie.engineSlot.1.profileId',
+    2: 'lizzie.engineSlot.2.profileId',
+  } as const;
 
   const analysisActive = $derived(analysis != null && (analysis as AnalysisData).total_playouts > 0);
-  const configuredEngine = $derived(firstEngine(config.engines));
+  const configuredEngine = $derived(profileById(selectedEngine1ProfileId));
+  const configuredEngine2 = $derived(profileById(selectedEngine2ProfileId));
+  const boardAnalysis = $derived<AnalysisData | null>(showEngine2 && boardAnalysisSource === 2 ? analysis2 : analysis);
+  const boardPreviewMove = $derived<MoveData | null>(boardAnalysisSource === 1 ? previewMove : null);
   const engineSummary = $derived(
     engineStatus.running
       ? engineStatus.pondering ? 'Pondering' : engineStatus.thinking ? 'Thinking' : 'Idle'
       : 'Off'
   );
+
+  async function applyLoadedConfig(loadedConfig: AppConfig) {
+    const shouldPersistIds = needsEngineProfileIds(loadedConfig);
+    const normalized = withEngineProfileIds(loadedConfig);
+    config = shouldPersistIds && api ? withEngineProfileIds(await persistConfig(api, normalized)) : normalized;
+    normalizeProfileSelections(config);
+    isDark = config.ui.dark_mode;
+  }
+
+  function profileById(profileId: string | null) {
+    const profile = config.engines.find((engine) => engine.id === profileId);
+    return profile && profile.command.trim().length > 0 ? profile : null;
+  }
+
+  function loadSelectedProfileIds() {
+    if (typeof localStorage === 'undefined') return;
+    selectedEngine1ProfileId = localStorage.getItem(engineSlotStorageKeys[1]);
+    selectedEngine2ProfileId = localStorage.getItem(engineSlotStorageKeys[2]);
+  }
+
+  function persistSelectedProfileId(slot: 1 | 2, profileId: string | null) {
+    if (typeof localStorage === 'undefined') return;
+    if (profileId) localStorage.setItem(engineSlotStorageKeys[slot], profileId);
+    else localStorage.removeItem(engineSlotStorageKeys[slot]);
+  }
+
+  function normalizeProfileSelections(nextConfig: AppConfig) {
+    const profileIds = new Set(nextConfig.engines.map((engine) => engine.id).filter(Boolean));
+    if (selectedEngine1ProfileId && !profileIds.has(selectedEngine1ProfileId)) {
+      selectedEngine1ProfileId = null;
+      persistSelectedProfileId(1, null);
+    }
+    if (selectedEngine2ProfileId && !profileIds.has(selectedEngine2ProfileId)) {
+      selectedEngine2ProfileId = null;
+      persistSelectedProfileId(2, null);
+    }
+  }
+
+  function selectProfileForSlot(slot: 1 | 2, profileId: string) {
+    if (slot === 1) selectedEngine1ProfileId = profileId;
+    else selectedEngine2ProfileId = profileId;
+    persistSelectedProfileId(slot, profileId);
+    profilePickerSlot = null;
+    error = '';
+  }
+
+  function profilePickerSelectedId(): string | null {
+    return profilePickerSlot === 2 ? selectedEngine2ProfileId : selectedEngine1ProfileId;
+  }
+
+  function previewBoardMove(): MoveData | null {
+    return boardPreviewMove ?? boardAnalysis?.best_moves?.[0] ?? null;
+  }
 
   function toggleTheme() {
     isDark = !isDark;
@@ -262,11 +330,17 @@
 
   async function handleSaveConfig(nextConfig: AppConfig) {
     try {
-      config = await persistConfig(api, nextConfig);
+      config = withEngineProfileIds(await persistConfig(api, withEngineProfileIds(nextConfig)));
+      normalizeProfileSelections(config);
       isDark = config.ui.dark_mode;
       showSettings = false;
       error = '';
     } catch (e) { error = String(e); }
+  }
+
+  function openSettingsDialog(tab: 'general' | 'engine' | 'board' | 'theme' = 'general') {
+    settingsTab = tab;
+    showSettings = true;
   }
 
   async function handleStartEngine() {
@@ -284,6 +358,18 @@
   async function handleTogglePonder() {
     if (!api) return;
     try { engineStatus = await toggleConfiguredPonder(api); error = ''; }
+    catch (e) { error = String(e); }
+  }
+
+  async function handleStartEngine2() {
+    if (!api) return;
+    try { engine2Status = await startConfiguredEngine2(api, configuredEngine2); error = ''; }
+    catch (e) { error = String(e); }
+  }
+
+  async function handleStopEngine2() {
+    if (!api) return;
+    try { engine2Status = await stopConfiguredEngine2(api); analysis2 = null; error = ''; }
     catch (e) { error = String(e); }
   }
 
@@ -349,12 +435,12 @@
   }
 
   onMount(async () => {
+    loadSelectedProfileIds();
     await preloadAssets();
     const bgImg = getBackgroundImage();
     if (bgImg) bgImageUrl = '/theme/background.jpg';
     try {
-      config = await loadConfig(api);
-      isDark = config.ui.dark_mode;
+      await applyLoadedConfig(await loadConfig(api));
     } catch (e) { error = String(e); }
     fetchBoard();
     setupEngineListeners();
@@ -376,7 +462,7 @@
     onToggleEdit={() => editMode = !editMode}
     onToggleEngine2={() => showEngine2 = !showEngine2}
     onToggleTheme={toggleTheme}
-    onToggleSettings={() => showSettings = true}
+    onToggleSettings={() => openSettingsDialog()}
     onMinimize={minimizeWindow}
     onToggleMaximize={toggleMaximizeWindow}
     onClose={closeWindow}
@@ -391,8 +477,8 @@
           {#if board}
             <AutoResizeBoard
               {board}
-              {analysis}
-              {previewMove}
+              analysis={boardAnalysis}
+              previewMove={boardPreviewMove}
               onCellClick={handleCellClick}
               onPreviewMove={previewCandidate}
               onClearPreview={clearCandidatePreview}
@@ -413,24 +499,45 @@
             <div class="error-bar">{error}</div>
           {/if}
 
-          <!-- TOP ZONE: Engine panels (auto height) -->
-          <div class="rp-top">
-            <EnginePanel
-              status={engineStatus}
-              {analysis}
-              hasConfiguredEngine={configuredEngine != null}
-              onStartEngine={handleStartEngine}
-              onStopEngine={handleStopEngine}
-              onTogglePonder={handleTogglePonder}
-              onGenmove={handleGenmove}
-              onPlayMove={playCandidateMove}
-              onPreviewMove={previewCandidate}
-              onClearPreview={clearCandidatePreview}
-              onOpenSettings={() => showSettings = true}
-            />
+          <div class="rp-top" class:dual={showEngine2}>
             {#if showEngine2}
-              <EnginePanel status={engine2Status} analysis={analysis2} compact={true} />
+              <div class="engine-source-switch" aria-label="Board analysis source">
+                <span>Board recommendations</span>
+                <button class:active={boardAnalysisSource === 1} onclick={() => boardAnalysisSource = 1}>Engine 1</button>
+                <button class:active={boardAnalysisSource === 2} onclick={() => boardAnalysisSource = 2} disabled={!analysis2 && !engine2Status.running}>Engine 2</button>
+              </div>
             {/if}
+            <div class="engine-stack" class:dual={showEngine2}>
+              <EnginePanel
+                status={engineStatus}
+                {analysis}
+                label="Engine 1"
+                profileName={configuredEngine?.name ?? ''}
+                hasConfiguredEngine={configuredEngine != null}
+                onStartEngine={handleStartEngine}
+                onStopEngine={handleStopEngine}
+                onTogglePonder={handleTogglePonder}
+                onGenmove={handleGenmove}
+                onPlayMove={playCandidateMove}
+                onPreviewMove={boardAnalysisSource === 1 ? previewCandidate : undefined}
+                onClearPreview={boardAnalysisSource === 1 ? clearCandidatePreview : undefined}
+                onSelectProfile={() => profilePickerSlot = 1}
+                onOpenSettings={() => openSettingsDialog('engine')}
+              />
+              {#if showEngine2}
+                <EnginePanel
+                  status={engine2Status}
+                  analysis={analysis2}
+                  hasConfiguredEngine={configuredEngine2 != null}
+                  label="Engine 2"
+                  profileName={configuredEngine2?.name ?? ''}
+                  onStartEngine={handleStartEngine2}
+                  onStopEngine={handleStopEngine2}
+                  onSelectProfile={() => profilePickerSlot = 2}
+                  onOpenSettings={() => openSettingsDialog('engine')}
+                />
+              {/if}
+            </div>
           </div>
 
           <!-- MAIN ZONE: two-column layout that fills remaining space -->
@@ -497,7 +604,7 @@
                 </div>
                 <div class="sb-body sb-body-preview" style:width={`${previewSize}px`} style:height={`${previewSize}px`} style:position="relative">
                   {#if board}
-                    <BoardCanvas {board} {analysis} previewMove={previewMove ?? analysis?.best_moves?.[0] ?? null} showPvRoute={true} showCandidateMarkers={false} showPvPath={false} onCellClick={() => {}} boardPx={previewSize} showCoordinates={false} />
+                    <BoardCanvas {board} analysis={boardAnalysis} previewMove={previewBoardMove()} showPvRoute={true} showCandidateMarkers={false} showPvPath={false} onCellClick={() => {}} boardPx={previewSize} showCoordinates={false} />
                     <!-- 右下角拖动手柄 -->
                     <div
                       class="resize-corner"
@@ -564,12 +671,25 @@
     {engineSummary}
   />
 
-  <SettingsDialog
-    open={showSettings}
-    {config}
-    onClose={() => showSettings = false}
-    onSave={handleSaveConfig}
+  <EngineProfilePicker
+    open={profilePickerSlot != null}
+    slotLabel={profilePickerSlot === 2 ? 'Engine 2' : 'Engine 1'}
+    profiles={config.engines}
+    selectedProfileId={profilePickerSelectedId()}
+    onClose={() => profilePickerSlot = null}
+    onSelect={(profileId) => profilePickerSlot && selectProfileForSlot(profilePickerSlot, profileId)}
+    onManageProfiles={() => { profilePickerSlot = null; openSettingsDialog('engine'); }}
   />
+
+  {#if showSettings}
+    <SettingsDialog
+      open={true}
+      initialTab={settingsTab}
+      {config}
+      onClose={() => showSettings = false}
+      onSave={handleSaveConfig}
+    />
+  {/if}
 </div>
 
 <style>
@@ -681,6 +801,47 @@
     flex-direction: column;
     gap: 6px;
     padding: 6px 6px 0;
+  }
+
+  .engine-source-switch {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 4px 6px 0;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .engine-source-switch button {
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-tertiary) 82%, transparent);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .engine-source-switch button.active {
+    background: color-mix(in srgb, var(--accent) 24%, var(--bg-tertiary));
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.16) inset;
+  }
+
+  .engine-source-switch button:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+  }
+
+  .engine-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .engine-stack.dual {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
   }
 
   /* Main zone: fills ALL remaining vertical space */

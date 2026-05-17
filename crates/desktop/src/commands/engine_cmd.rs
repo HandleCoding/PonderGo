@@ -369,6 +369,19 @@ pub fn get_engine2_status(state: State<AppState>) -> EngineStatus {
 }
 
 #[tauri::command]
+pub fn toggle_ponder2(state: State<AppState>) -> Result<bool, String> {
+    let engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    match engine_guard.as_ref() {
+        Some(engine) => {
+            let board = state.board.lock().unwrap_or_else(|e| e.into_inner());
+            engine.toggle_ponder_with_player(board.current_player == Stone::Black);
+            Ok(engine.is_pondering())
+        }
+        None => Err("No second engine running".to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn get_analysis2(state: State<AppState>) -> Result<AnalysisData, String> {
     let engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
     match engine_guard.as_ref() {

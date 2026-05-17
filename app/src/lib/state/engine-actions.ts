@@ -63,9 +63,49 @@ function quoteShellArg(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+export async function startConfiguredEngine2(api: ApiClient, engine: EngineEntry | null): Promise<EngineStatus> {
+  if (!engine) throw new Error('No second engine configured.');
+
+  const command = engine.command.trim();
+  validateEngineCommand(command);
+
+  try {
+    await api.startEngine2({
+      command,
+      initial_commands: engine.initial_commands,
+      analyze_interval_cs: engine.analyze_interval_cs,
+    });
+
+    await waitForEngine2Ready(api);
+    await api.togglePonder2();
+    return api.getEngine2Status();
+  } catch (e) {
+    await api.stopEngine2().catch(() => {});
+    throw e;
+  }
+}
+
+async function waitForEngine2Ready(api: ApiClient): Promise<EngineStatus> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < ENGINE_READY_TIMEOUT_MS) {
+    const status = await api.getEngine2Status();
+    if (status.loaded) return status;
+    if (!status.running) throw new Error('Second engine exited before it finished loading. Check the engine command and model/config paths.');
+    await delay(ENGINE_READY_POLL_MS);
+  }
+
+  throw new Error('Second engine started but did not respond to GTP handshake. For KataGo, use `katago gtp -config ... -model ...`, not `katago analysis`.');
+}
+
 export async function stopConfiguredEngine(api: ApiClient): Promise<EngineStatus> {
   await api.stopEngine();
   return api.getEngineStatus();
+}
+
+export async function stopConfiguredEngine2(api: ApiClient): Promise<EngineStatus> {
+  await api.stopEngine2();
+  return api.getEngine2Status();
 }
 
 export async function toggleConfiguredPonder(api: ApiClient): Promise<EngineStatus> {

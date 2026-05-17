@@ -69,6 +69,7 @@ export interface StartEngineRequest {
 }
 
 export interface EngineEntry {
+  id?: string;
   name: string;
   command: string;
   initial_commands: string;

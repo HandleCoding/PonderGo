@@ -149,6 +149,10 @@ export class TauriClient implements ApiClient {
     return invoke<EngineStatus>('get_engine2_status');
   }
 
+  async togglePonder2(): Promise<boolean> {
+    return invoke<boolean>('toggle_ponder2');
+  }
+
   async getAnalysis2(): Promise<AnalysisData> {
     return invoke<AnalysisData>('get_analysis2');
   }

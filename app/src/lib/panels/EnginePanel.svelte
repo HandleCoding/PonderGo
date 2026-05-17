@@ -6,11 +6,14 @@
     status,
     analysis = null,
     compact = false,
+    label = 'Engine 1',
+    profileName = '',
     hasConfiguredEngine = false,
     onStartEngine,
     onStopEngine,
     onTogglePonder,
     onGenmove,
+    onSelectProfile,
     onOpenSettings,
     onPlayMove,
     onPreviewMove,
@@ -19,11 +22,14 @@
     status: EngineStatus;
     analysis?: AnalysisData | null;
     compact?: boolean;
+    label?: string;
+    profileName?: string;
     hasConfiguredEngine?: boolean;
     onStartEngine?: () => void;
     onStopEngine?: () => void;
     onTogglePonder?: () => void;
     onGenmove?: () => void;
+    onSelectProfile?: () => void;
     onOpenSettings?: () => void;
     onPlayMove?: (coordinate: string) => void;
     onPreviewMove?: (move: MoveData) => void;
@@ -113,7 +119,8 @@
         <div>
           <div class="engine-title">
             <svg class="engine-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            <span class="engine-name">{status.running ? status.name : 'No engine'}</span>
+            <span class="engine-slot">{label}</span>
+            <span class="engine-name">{status.running ? status.name : profileName || 'No profile'}</span>
           </div>
           {#if status.running}
             <div class="engine-meta">
@@ -135,8 +142,11 @@
             <button onclick={onTogglePonder} title="Toggle pondering">{status.pondering ? 'Pause' : 'Ponder'}</button>
             <button onclick={onGenmove} title="Ask engine to play">Genmove</button>
             <button class="danger" onclick={onStopEngine} title="Stop engine">Stop</button>
-          {:else if hasConfiguredEngine}
-            <button class="primary" onclick={onStartEngine} title="Start configured engine">Start Engine</button>
+          {:else}
+            <button onclick={onSelectProfile} title="Choose engine profile">Profile</button>
+            {#if hasConfiguredEngine}
+              <button class="primary" onclick={onStartEngine} title="Start selected engine profile">Start Engine</button>
+            {/if}
           {/if}
         </div>
       </div>
@@ -236,10 +246,10 @@
     {:else}
       <EmptyState
         compact
-        title={hasConfiguredEngine ? 'Engine is ready' : 'No engine configured'}
-        message={hasConfiguredEngine ? 'Start the engine to begin live analysis.' : 'Add an engine command in settings to unlock analysis.'}
-        actionLabel={hasConfiguredEngine ? 'Start Engine' : 'Configure Engine'}
-        onAction={hasConfiguredEngine ? onStartEngine : onOpenSettings}
+        title={hasConfiguredEngine ? 'Engine is ready' : 'No profile selected'}
+        message={hasConfiguredEngine ? 'Start the engine to begin live analysis.' : `Select a profile for ${label}, or add reusable profiles in settings.`}
+        actionLabel={hasConfiguredEngine ? 'Start Engine' : 'Select Profile'}
+        onAction={hasConfiguredEngine ? onStartEngine : onSelectProfile}
       />
     {/if}
   </div>
@@ -255,7 +265,7 @@
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
     display: flex;
     flex-direction: column;
-    max-height: clamp(300px, 48vh, 420px);
+    max-height: clamp(220px, 34vh, 420px);
     min-height: 0;
   }
 
@@ -320,6 +330,17 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 4px;
+  }
+
+  .engine-slot {
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.14);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
   }
 
   .engine-name {

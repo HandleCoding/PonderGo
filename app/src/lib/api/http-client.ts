@@ -49,6 +49,7 @@ export class HttpClient implements ApiClient {
   async startEngine2(_request: any): Promise<void> { throw new Error('Not implemented'); }
   async stopEngine2(): Promise<void> { throw new Error('Not implemented'); }
   async getEngine2Status(): Promise<any> { throw new Error('Not implemented'); }
+  async togglePonder2(): Promise<boolean> { throw new Error('Not implemented'); }
   async getAnalysis2(): Promise<any> { throw new Error('Not implemented'); }
   onAnalysis2Update(_callback: (data: any) => void): () => void { return () => {}; }
   onEngine2Identified(_callback: (data: any) => void): () => void { return () => {}; }
