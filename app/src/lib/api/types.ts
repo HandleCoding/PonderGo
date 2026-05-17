@@ -79,6 +79,31 @@ export interface AnalysisOverview {
   white_match_percent: number | null;
 }
 
+export interface HawkeyeSnapshot {
+  engine_slot: number;
+  board_size: number;
+  move_number: number;
+  current_player: 'BLACK' | 'WHITE';
+  komi: number;
+  black_captures: number;
+  white_captures: number;
+  best_moves: MoveData[];
+  total_playouts: number;
+  winrate: number | null;
+  score_lead: number | null;
+  black_match_percent: number | null;
+  white_match_percent: number | null;
+}
+
+export interface HawkeyeState {
+  engine1: HawkeyeSnapshot;
+  engine2: HawkeyeSnapshot;
+}
+
+export interface HawkeyePlayMoveRequest {
+  coordinate: string;
+}
+
 export interface RuntimeEngineParams {
   analyze_interval_cs: number;
 }

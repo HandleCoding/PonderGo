@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
+use tauri::WebviewWindowBuilder;
 
 use ponder_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
 use ponder_core::engine::move_data::MoveData;
@@ -66,6 +67,29 @@ pub struct AnalysisOverview {
     pub white_match_percent: Option<f64>,
 }
 
+#[derive(Serialize, Clone)]
+pub struct HawkeyeSnapshot {
+    pub engine_slot: usize,
+    pub board_size: usize,
+    pub move_number: usize,
+    pub current_player: String,
+    pub komi: f64,
+    pub black_captures: usize,
+    pub white_captures: usize,
+    pub best_moves: Vec<MoveData>,
+    pub total_playouts: usize,
+    pub winrate: Option<f64>,
+    pub score_lead: Option<f64>,
+    pub black_match_percent: Option<f64>,
+    pub white_match_percent: Option<f64>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct HawkeyeState {
+    pub engine1: HawkeyeSnapshot,
+    pub engine2: HawkeyeSnapshot,
+}
+
 #[derive(Deserialize)]
 pub struct StartEngineRequest {
     pub command: String,
@@ -116,6 +140,7 @@ impl EngineListener for TauriEngineListener {
         if let Some(state) = self.app_handle.try_state::<AppState>() {
             let overview = record_analysis_and_build_overview(&state, EngineSlot::One, &data);
             let _ = self.app_handle.emit("engine:overview", &overview);
+            emit_hawkeye_update(&self.app_handle, &state);
         }
         let _ = self.app_handle.emit("engine:analysis", &data);
     }
@@ -177,6 +202,7 @@ impl EngineListener for TauriEngine2Listener {
         if let Some(state) = self.app_handle.try_state::<AppState>() {
             let overview = record_analysis_and_build_overview(&state, EngineSlot::Two, &data);
             let _ = self.app_handle.emit("engine2:overview", &overview);
+            emit_hawkeye_update(&self.app_handle, &state);
         }
         let _ = self.app_handle.emit("engine2:analysis", &data);
     }
@@ -265,11 +291,17 @@ pub fn start_engine(
 }
 
 #[tauri::command]
-pub fn stop_engine(state: State<AppState>) -> Result<(), String> {
+pub fn stop_engine(app_handle: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
     let mut engine_guard = state.engine.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref engine) = *engine_guard {
         engine.shutdown();
         *engine_guard = None;
+        drop(engine_guard);
+        {
+            let mut history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+            history.record_analysis(EngineSlot::One, Vec::new(), 0);
+        }
+        emit_hawkeye_update(&app_handle, &state);
         Ok(())
     } else {
         Err("No engine running".to_string())
@@ -319,6 +351,34 @@ pub fn get_analysis(state: State<AppState>) -> Result<AnalysisData, String> {
 #[tauri::command]
 pub fn get_analysis_overview(state: State<AppState>) -> AnalysisOverview {
     analysis_overview_from_history(&state, EngineSlot::One)
+}
+
+#[tauri::command]
+pub fn get_hawkeye_state(state: State<AppState>) -> HawkeyeState {
+    build_hawkeye_state(&state)
+}
+
+#[tauri::command]
+pub fn open_hawkeye_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("hawkeye") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app_handle,
+        "hawkeye",
+        tauri::WebviewUrl::App("index.html?window=hawkeye".into()),
+    )
+    .title("PonderGo Hawkeye")
+    .inner_size(980.0, 620.0)
+    .min_inner_size(760.0, 460.0)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -382,7 +442,7 @@ pub fn clear_analysis_constraints(state: State<AppState>) -> Result<(), String> 
             engine.ponder_with_player(board.current_player == Stone::Black);
             Ok(())
         }
-        None => Err("No engine running".to_string()),
+        None => Ok(()),
     }
 }
 
@@ -504,11 +564,17 @@ pub fn start_engine2(
 }
 
 #[tauri::command]
-pub fn stop_engine2(state: State<AppState>) -> Result<(), String> {
+pub fn stop_engine2(app_handle: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
     let mut engine_guard = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref engine) = *engine_guard {
         engine.shutdown();
         *engine_guard = None;
+        drop(engine_guard);
+        {
+            let mut history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+            history.record_analysis(EngineSlot::Two, Vec::new(), 0);
+        }
+        emit_hawkeye_update(&app_handle, &state);
         Ok(())
     } else {
         Err("No second engine running".to_string())
@@ -566,4 +632,55 @@ pub fn get_analysis2(state: State<AppState>) -> Result<AnalysisData, String> {
 #[tauri::command]
 pub fn get_analysis2_overview(state: State<AppState>) -> AnalysisOverview {
     analysis_overview_from_history(&state, EngineSlot::Two)
+}
+
+fn emit_hawkeye_update(app_handle: &tauri::AppHandle, state: &State<AppState>) {
+    let snapshot = build_hawkeye_state(state);
+    let _ = app_handle.emit("hawkeye:update", snapshot);
+}
+
+fn build_hawkeye_state(state: &State<AppState>) -> HawkeyeState {
+    let history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+    HawkeyeState {
+        engine1: build_hawkeye_snapshot(&history, EngineSlot::One),
+        engine2: build_hawkeye_snapshot(&history, EngineSlot::Two),
+    }
+}
+
+fn build_hawkeye_snapshot(
+    history: &ponder_core::go::board_history::BoardHistoryList,
+    slot: EngineSlot,
+) -> HawkeyeSnapshot {
+    let data = history.get_data();
+    let summary = history.match_summary(slot);
+    let (best_moves, total_playouts, score_lead, winrate) = match slot {
+        EngineSlot::One => (
+            data.best_moves.clone(),
+            data.playouts,
+            data.is_kata_data.then_some(data.score_mean),
+            (!data.best_moves.is_empty()).then_some(data.winrate),
+        ),
+        EngineSlot::Two => (
+            data.best_moves2.clone(),
+            data.playouts2,
+            data.is_kata_data2.then_some(data.score_mean2),
+            (!data.best_moves2.is_empty()).then_some(data.winrate2),
+        ),
+    };
+
+    HawkeyeSnapshot {
+        engine_slot: match slot { EngineSlot::One => 1, EngineSlot::Two => 2 },
+        board_size: data.board_size,
+        move_number: data.move_number,
+        current_player: if data.black_to_play { "BLACK" } else { "WHITE" }.to_string(),
+        komi: data.komi,
+        black_captures: data.black_captures,
+        white_captures: data.white_captures,
+        best_moves,
+        total_playouts,
+        winrate: winrate.map(|value| if data.black_to_play { value } else { 100.0 - value }),
+        score_lead: score_lead.map(|value| if data.black_to_play { value } else { -value }),
+        black_match_percent: summary.black_match_percent,
+        white_match_percent: summary.white_match_percent,
+    }
 }

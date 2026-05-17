@@ -3,6 +3,7 @@ import type {
   EngineStatus,
   AnalysisData,
   AnalysisOverview,
+  HawkeyeState,
   SgfResult,
   StartEngineRequest,
   TreeNode,
@@ -37,6 +38,8 @@ export interface ApiClient {
   genmove(color: string): Promise<void>;
   getAnalysis(): Promise<AnalysisData>;
   getAnalysisOverview(): Promise<AnalysisOverview>;
+  getHawkeyeState(): Promise<HawkeyeState>;
+  openHawkeyeWindow(): Promise<void>;
   getEngineRuntimeParams(): Promise<RuntimeEngineParams>;
   setEngineRuntimeParams(params: RuntimeEngineParams): Promise<RuntimeEngineParams>;
   resetEngineRuntimeParams(): Promise<RuntimeEngineParams>;
@@ -44,6 +47,7 @@ export interface ApiClient {
   clearAnalysisConstraints(): Promise<void>;
   onAnalysisUpdate(callback: (data: AnalysisData) => void): () => void;
   onAnalysisOverview(callback: (data: AnalysisOverview) => void): () => void;
+  onHawkeyeUpdate(callback: (data: HawkeyeState) => void): () => void;
   onEngineIdentified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;
   onEngineExit(callback: (normal: boolean) => void): () => void;
   onGenmove(callback: (color: string, coord: string) => void): () => void;

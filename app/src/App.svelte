@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { emit, listen } from '@tauri-apps/api/event';
   import { preloadAssets, getBackgroundImage } from './lib/board/board-renderer';
   import BoardCanvas from './lib/board/BoardCanvas.svelte';
   import EnginePanel from './lib/panels/EnginePanel.svelte';
@@ -52,9 +53,9 @@
   let nextNumberLabel: number = $state(1);
   let alternateEditIsBlack: boolean = $state(true);
   let selectedAnalysisPoints: Array<[number, number]> = $state([]);
+  let appliedAnalysisPoints: Array<[number, number]> = $state([]);
   let analysisJobMode: AnalysisJobMode = $state('idle');
   let showAutoAnalysis: boolean = $state(false);
-  let showHawkeye: boolean = $state(false);
   let engineRuntimeParams: RuntimeEngineParams = $state({ analyze_interval_cs: 10 });
   let editMode: boolean = $state(false);
   let editIsBlack: boolean = $state(true);
@@ -100,6 +101,7 @@
       : 'Off'
   );
   const effectiveTopHeight = $derived(showEngine2 ? Math.max(workbenchTopHeight, 220) : workbenchTopHeight);
+  const restrictedAnalysisActive = $derived(appliedAnalysisPoints.length > 0 && effectiveAnalysisMode === 'live');
 
   async function applyLoadedConfig(loadedConfig: AppConfig) {
     const shouldPersistIds = needsEngineProfileIds(loadedConfig);
@@ -158,7 +160,8 @@
     isDark = !isDark;
     config = { ...config, ui: { ...config.ui, dark_mode: isDark } };
     applyUiConfig(config);
-    if (api) persistConfig(api, config).then((saved) => { config = saved; }).catch((e) => { error = String(e); });
+    broadcastThemeState();
+    if (api) persistConfig(api, config).then((saved) => { config = saved; broadcastThemeState(); }).catch((e) => { error = String(e); });
   }
 
   function setBoard(nextBoard: BoardState) {
@@ -207,6 +210,20 @@
     ]);
     analysisOverview = overview1;
     analysis2Overview = overview2;
+    await broadcastHawkeyeState();
+  }
+
+  async function broadcastHawkeyeState() {
+    if (!api) return;
+    try {
+      await emit('hawkeye:update', await api.getHawkeyeState());
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function broadcastThemeState() {
+    await emit('hawkeye:theme', config.ui);
   }
 
   async function placeMove(x: number, y: number) {
@@ -234,12 +251,24 @@
     updateBoard(() => api!.previousMove());
   }
 
+  function clearPointConstraintState() {
+    selectedAnalysisPoints = [];
+    appliedAnalysisPoints = [];
+  }
+
+  async function clearBackendPointConstraints() {
+    clearPointConstraintState();
+    await api?.clearAnalysisConstraints();
+  }
+
   async function newGame(size?: number) {
     if (!api) { board = mockBoard(); fileState = { ...emptyFileState }; return; }
     try {
+      await clearBackendPointConstraints();
       board = await api.newGame(size);
       analysisOverview = null;
       analysis2Overview = null;
+      appliedAnalysisPoints = [];
       winrateHistory = [];
       fileState = { ...emptyFileState };
       fetchTreePath();
@@ -324,6 +353,10 @@
 
   function playCandidateMove(coordinate: string) {
     if (!board) return;
+    if (coordinate.toLowerCase() === 'pass') {
+      passMove();
+      return;
+    }
     const pos = gtpToCoord(coordinate, board.size);
     if (!pos) {
       error = `Cannot play candidate move: ${coordinate}`;
@@ -461,6 +494,7 @@
     busyAction = 'open';
     try {
       const result = await openSgfFile(api);
+      await clearBackendPointConstraints();
       setBoard(result.board);
       analysisOverview = null;
       analysis2Overview = null;
@@ -496,6 +530,7 @@
       const content = await navigator.clipboard.readText();
       const result = await api.loadSgf(content);
       if (!result.success) throw new Error(result.message);
+      await clearBackendPointConstraints();
       const nextBoard = await api.getBoard();
       setBoard(nextBoard);
       fileState = markDirty({ ...emptyFileState, name: 'Pasted SGF' });
@@ -527,6 +562,7 @@
       config = withEngineProfileIds(await persistConfig(api, withEngineProfileIds(nextConfig)));
       normalizeProfileSelections(config);
       isDark = config.ui.dark_mode;
+      await broadcastThemeState();
       showSettings = false;
       error = '';
     } catch (e) { error = String(e); }
@@ -545,7 +581,13 @@
 
   async function handleStopEngine() {
     if (!api) return;
-    try { engineStatus = await stopConfiguredEngine(api); analysis = null; analysisOverview = null; error = ''; }
+    try {
+      engineStatus = await stopConfiguredEngine(api);
+      analysis = null;
+      analysisOverview = null;
+      await broadcastHawkeyeState();
+      error = '';
+    }
     catch (e) { error = String(e); }
   }
 
@@ -577,28 +619,46 @@
     } catch (e) { error = String(e); }
   }
 
+  async function applyPointConstraints(points: Array<[number, number]>) {
+    if (!api || points.length === 0) return;
+    await api.analyzeWithConstraints({
+      mode: 'allow',
+      points: points.map(([x, y]) => ({ x, y })),
+      applies_to: 'both',
+    });
+    appliedAnalysisPoints = [...points];
+    analysisJobMode = 'live';
+  }
+
   async function handleApplyPointConstraints() {
     if (!api || selectedAnalysisPoints.length === 0) return;
     try {
-      await api.analyzeWithConstraints({
-        mode: 'allow',
-        points: selectedAnalysisPoints.map(([x, y]) => ({ x, y })),
-        applies_to: 'both',
-      });
-      analysisJobMode = 'live';
+      await applyPointConstraints(selectedAnalysisPoints);
       error = '';
     } catch (e) { error = String(e); }
   }
 
   async function handleClearPointConstraints() {
-    selectedAnalysisPoints = [];
-    if (!api) return;
-    try { await api.clearAnalysisConstraints(); error = ''; }
+    try {
+      await clearBackendPointConstraints();
+      error = '';
+    }
     catch (e) { error = String(e); }
   }
 
-  function handleCancelLastPoint() {
-    selectedAnalysisPoints = selectedAnalysisPoints.slice(0, -1);
+  async function handleCancelLastPoint() {
+    const hadAppliedConstraints = appliedAnalysisPoints.length > 0;
+    const remainingPoints = selectedAnalysisPoints.slice(0, -1);
+    selectedAnalysisPoints = remainingPoints;
+    if (!hadAppliedConstraints) return;
+    try {
+      if (remainingPoints.length === 0) {
+        await clearBackendPointConstraints();
+      } else {
+        await applyPointConstraints(remainingPoints);
+      }
+      error = '';
+    } catch (e) { error = String(e); }
   }
 
   async function handleSetEngineInterval(value: number) {
@@ -617,6 +677,12 @@
     } catch (e) { error = String(e); }
   }
 
+  async function handleOpenHawkeye() {
+    if (!api) return;
+    try { await api.openHawkeyeWindow(); error = ''; }
+    catch (e) { error = String(e); }
+  }
+
   async function handleStartEngine2() {
     if (!api) return;
     try { engine2Status = await startConfiguredEngine2(api, configuredEngine2); error = ''; }
@@ -625,7 +691,13 @@
 
   async function handleStopEngine2() {
     if (!api) return;
-    try { engine2Status = await stopConfiguredEngine2(api); analysis2 = null; analysis2Overview = null; error = ''; }
+    try {
+      engine2Status = await stopConfiguredEngine2(api);
+      analysis2 = null;
+      analysis2Overview = null;
+      await broadcastHawkeyeState();
+      error = '';
+    }
     catch (e) { error = String(e); }
   }
 
@@ -664,12 +736,17 @@
       analysisOverview = data;
     });
 
+    api.onGenmove((_color, coord) => {
+      playCandidateMove(coord);
+    });
+
     api.onEngineIdentified((data) => {
       engineStatus = { ...engineStatus, name: data.name, engine_type: data.engine_type, loaded: true };
     });
 
     api.onEngineExit(() => {
       engineStatus = { ...engineStatus, running: false, loaded: false, pondering: false };
+      broadcastHawkeyeState();
     });
 
     api.onAnalysis2Update((data: AnalysisData) => {
@@ -686,6 +763,7 @@
 
     api.onEngine2Exit(() => {
       engine2Status = { ...engine2Status, running: false, loaded: false, pondering: false };
+      broadcastHawkeyeState();
     });
   }
 
@@ -705,10 +783,20 @@
     if (bgImg) bgImageUrl = '/theme/background.jpg';
     try {
       await applyLoadedConfig(await loadConfig(api));
+      await broadcastThemeState();
       if (api) engineRuntimeParams = await api.getEngineRuntimeParams();
     } catch (e) { error = String(e); }
     fetchBoard();
     setupEngineListeners();
+    if (api) {
+      listen<{ coordinate: string }>('hawkeye:play-move', (event) => {
+        playCandidateMove(event.payload.coordinate);
+      });
+      listen('hawkeye:request-state', () => {
+        broadcastHawkeyeState();
+        broadcastThemeState();
+      });
+    }
     window.addEventListener('keydown', handleKeydown);
   });
 </script>
@@ -720,7 +808,8 @@
     {boardMode}
     {markupMode}
     selectedPointCount={selectedAnalysisPoints.length}
-    {showHawkeye}
+    pointConstraintsActive={appliedAnalysisPoints.length > 0}
+    showHawkeye={false}
     {showEngine2}
     {isDark}
     komi={board?.komi ?? 6.5}
@@ -744,7 +833,7 @@
     onApplyPointConstraints={handleApplyPointConstraints}
     onCancelLastPoint={handleCancelLastPoint}
     onClearPointConstraints={handleClearPointConstraints}
-    onToggleHawkeye={() => showHawkeye = !showHawkeye}
+    onToggleHawkeye={handleOpenHawkeye}
     onSetEngineInterval={handleSetEngineInterval}
     onResetEngineParams={handleResetEngineParams}
     onToggleEngine2={() => showEngine2 = !showEngine2}
@@ -805,7 +894,7 @@
                 label="Engine 1"
                 profileName={configuredEngine?.name ?? ''}
                 hasConfiguredEngine={configuredEngine != null}
-                restrictedAnalysis={selectedAnalysisPoints.length > 0 && effectiveAnalysisMode === 'live'}
+                restrictedAnalysis={restrictedAnalysisActive}
                 onStartEngine={handleStartEngine}
                 onStopEngine={handleStopEngine}
                 onTogglePonder={handleTogglePonder}
@@ -876,21 +965,7 @@
               {/if}
               <button class="workbench-resizer horizontal" type="button" aria-label="Resize winrate graph" onmousedown={startResizeGraph}></button>
               <div class="movelist-container" class:empty={treePath.length === 0}>
-                {#if showHawkeye}
-                  <div class="panel-card hawkeye-panel">
-                    <div class="starter-header">
-                      <span>鹰眼分析</span>
-                      <span class="starter-mode">Hawkeye</span>
-                    </div>
-                    <div class="hawkeye-grid">
-                      <span>最佳点</span><strong>{analysisOverview?.best_move ?? '--'}</strong>
-                      <span>黑胜率</span><strong>{analysisOverview?.winrate != null ? `${analysisOverview.winrate.toFixed(1)}%` : '--'}</strong>
-                      <span>目差</span><strong>{analysisOverview?.score_lead != null ? analysisOverview.score_lead.toFixed(1) : '--'}</strong>
-                      <span>计算量</span><strong>{analysisOverview?.total_playouts ?? 0}</strong>
-                      <span>选点约束</span><strong>{selectedAnalysisPoints.length > 0 ? `${selectedAnalysisPoints.length} 点` : '全局'}</strong>
-                    </div>
-                  </div>
-                {:else if treePath.length > 0}
+                {#if treePath.length > 0}
                   <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoTreePath} />
                 {:else}
                   <div class="panel-card starter-movelist">
@@ -1193,29 +1268,6 @@
   .auto-analysis-dialog button.primary {
     color: #fff;
     background: var(--accent);
-  }
-
-  .hawkeye-panel {
-    height: 100%;
-    padding: 12px;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    gap: 12px;
-  }
-
-  .hawkeye-grid {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 10px 14px;
-    align-content: start;
-    color: var(--text-secondary);
-    font-size: 12px;
-  }
-
-  .hawkeye-grid strong {
-    color: var(--text-primary);
-    text-align: right;
-    font-family: var(--font-mono);
   }
 
   /* ========== RIGHT PANEL: Yzy-style layout ========== */

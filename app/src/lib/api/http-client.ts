@@ -43,6 +43,8 @@ export class HttpClient implements ApiClient {
   async genmove(_color: string): Promise<void> { throw new Error('Not implemented'); }
   async getAnalysis(): Promise<any> { throw new Error('Not implemented'); }
   async getAnalysisOverview(): Promise<any> { throw new Error('Not implemented'); }
+  async getHawkeyeState(): Promise<any> { throw new Error('Not implemented'); }
+  async openHawkeyeWindow(): Promise<void> { throw new Error('Not implemented'); }
   async getEngineRuntimeParams(): Promise<any> { return { analyze_interval_cs: 10 }; }
   async setEngineRuntimeParams(params: any): Promise<any> { return params; }
   async resetEngineRuntimeParams(): Promise<any> { return { analyze_interval_cs: 10 }; }
@@ -50,6 +52,7 @@ export class HttpClient implements ApiClient {
   async clearAnalysisConstraints(): Promise<void> { throw new Error('Not implemented'); }
   onAnalysisUpdate(_callback: (data: any) => void): () => void { return () => {}; }
   onAnalysisOverview(_callback: (data: any) => void): () => void { return () => {}; }
+  onHawkeyeUpdate(_callback: (data: any) => void): () => void { return () => {}; }
   onEngineIdentified(_callback: (data: any) => void): () => void { return () => {}; }
   onEngineExit(_callback: (normal: boolean) => void): () => void { return () => {}; }
   onGenmove(_callback: (color: string, coord: string) => void): () => void { return () => {}; }

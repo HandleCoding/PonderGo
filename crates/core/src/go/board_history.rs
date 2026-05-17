@@ -404,6 +404,7 @@ impl BoardHistoryList {
                 EngineSlot::One => {
                     data.best_moves = best_moves;
                     data.playouts = total_playouts;
+                    data.is_kata_data = false;
                     if let Some(best) = data.best_moves.first() {
                         data.winrate = best.winrate;
                         data.score_mean = best.score_mean;
@@ -414,6 +415,7 @@ impl BoardHistoryList {
                 EngineSlot::Two => {
                     data.best_moves2 = best_moves;
                     data.playouts2 = total_playouts;
+                    data.is_kata_data2 = false;
                     if let Some(best) = data.best_moves2.first() {
                         data.winrate2 = best.winrate;
                         data.score_mean2 = best.score_mean;

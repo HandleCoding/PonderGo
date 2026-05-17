@@ -2,8 +2,20 @@ use std::rc::Rc;
 use tauri::State;
 use serde::Serialize;
 use ponder_core::go::board_history::NodeRef;
-use ponder_core::go::board::{Board, BoardState};
+use ponder_core::go::board::{Board, BoardData, BoardState};
 use crate::AppState;
+
+fn sync_position_both(state: &AppState, data: &BoardData) {
+    let engine1 = state.engine.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine1 {
+        engine.sync_position(data.board_size, data.komi, &data.stones, data.black_to_play);
+    }
+    drop(engine1);
+    let engine2 = state.engine2.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref engine) = *engine2 {
+        engine.sync_position(data.board_size, data.komi, &data.stones, data.black_to_play);
+    }
+}
 
 /// Helper: lock board and history in consistent order (board first, then history).
 macro_rules! lock_board_history {
@@ -85,7 +97,11 @@ pub fn goto_tree_path(path: Vec<usize>, state: State<AppState>) -> Result<BoardS
     match history.go_to_path(&path) {
         Some(data) => {
             *board = Board::from_data(&data);
-            Ok(board.to_state())
+            let board_state = board.to_state();
+            drop(board);
+            drop(history);
+            sync_position_both(&state, &data);
+            Ok(board_state)
         }
         None => Err("Cannot go to tree node".to_string()),
     }
@@ -99,7 +115,11 @@ pub fn next_variation(index: usize, state: State<AppState>) -> Result<BoardState
         Some(_data) => {
             let data = history.get_data();
             *board = Board::from_data(&data);
-            Ok(board.to_state())
+            let board_state = board.to_state();
+            drop(board);
+            drop(history);
+            sync_position_both(&state, &data);
+            Ok(board_state)
         }
         None => Err("No such variation".to_string()),
     }

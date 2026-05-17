@@ -6,6 +6,7 @@ import type {
   EngineStatus,
   AnalysisData,
   AnalysisOverview,
+  HawkeyeState,
   SgfResult,
   StartEngineRequest,
   TreeNode,
@@ -103,6 +104,14 @@ export class TauriClient implements ApiClient {
     return invoke<AnalysisOverview>('get_analysis_overview');
   }
 
+  async getHawkeyeState(): Promise<HawkeyeState> {
+    return invoke<HawkeyeState>('get_hawkeye_state');
+  }
+
+  async openHawkeyeWindow(): Promise<void> {
+    return invoke('open_hawkeye_window');
+  }
+
   async getEngineRuntimeParams(): Promise<RuntimeEngineParams> {
     return invoke<RuntimeEngineParams>('get_engine_runtime_params');
   }
@@ -134,6 +143,14 @@ export class TauriClient implements ApiClient {
   onAnalysisOverview(callback: (data: AnalysisOverview) => void): () => void {
     let unlisten: UnlistenFn | null = null;
     listen<AnalysisOverview>('engine:overview', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
+
+  onHawkeyeUpdate(callback: (data: HawkeyeState) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<HawkeyeState>('hawkeye:update', (event) => {
       callback(event.payload);
     }).then((fn) => { unlisten = fn; });
     return () => { if (unlisten) unlisten(); };

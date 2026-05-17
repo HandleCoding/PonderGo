@@ -115,6 +115,8 @@ pub fn run() {
             engine_cmd::genmove,
             engine_cmd::get_analysis,
             engine_cmd::get_analysis_overview,
+            engine_cmd::get_hawkeye_state,
+            engine_cmd::open_hawkeye_window,
             engine_cmd::get_engine_runtime_params,
             engine_cmd::set_engine_runtime_params,
             engine_cmd::reset_engine_runtime_params,
