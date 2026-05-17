@@ -5,6 +5,7 @@ import type {
   BoardState,
   EngineStatus,
   AnalysisData,
+  AnalysisOverview,
   SgfResult,
   StartEngineRequest,
   TreeNode,
@@ -80,9 +81,21 @@ export class TauriClient implements ApiClient {
     return invoke<AnalysisData>('get_analysis');
   }
 
+  async getAnalysisOverview(): Promise<AnalysisOverview> {
+    return invoke<AnalysisOverview>('get_analysis_overview');
+  }
+
   onAnalysisUpdate(callback: (data: AnalysisData) => void): () => void {
     let unlisten: UnlistenFn | null = null;
     listen<AnalysisData>('engine:analysis', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
+
+  onAnalysisOverview(callback: (data: AnalysisOverview) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<AnalysisOverview>('engine:overview', (event) => {
       callback(event.payload);
     }).then((fn) => { unlisten = fn; });
     return () => { if (unlisten) unlisten(); };
@@ -157,9 +170,21 @@ export class TauriClient implements ApiClient {
     return invoke<AnalysisData>('get_analysis2');
   }
 
+  async getAnalysis2Overview(): Promise<AnalysisOverview> {
+    return invoke<AnalysisOverview>('get_analysis2_overview');
+  }
+
   onAnalysis2Update(callback: (data: AnalysisData) => void): () => void {
     let unlisten: UnlistenFn | null = null;
     listen<AnalysisData>('engine2:analysis', (event) => {
+      callback(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }
+
+  onAnalysis2Overview(callback: (data: AnalysisOverview) => void): () => void {
+    let unlisten: UnlistenFn | null = null;
+    listen<AnalysisOverview>('engine2:overview', (event) => {
       callback(event.payload);
     }).then((fn) => { unlisten = fn; });
     return () => { if (unlisten) unlisten(); };

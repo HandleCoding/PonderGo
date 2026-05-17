@@ -1,8 +1,22 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::engine::move_data::MoveData;
 use crate::go::stone::Stone;
 use crate::go::zobrist::ZobristTable;
+
+/// Match metadata for one actual move compared against the previous node's AI candidates.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MoveMatchInfo {
+    pub analyzed_match_value: bool,
+    pub is_black: bool,
+    pub is_best: bool,
+    pub is_match_ai: bool,
+    pub percent_match: f64,
+    pub candidate_number: Option<usize>,
+    pub move_number: usize,
+    pub previous_playouts: usize,
+}
 
 /// Immutable snapshot of board state, mirroring BoardData.java fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +40,14 @@ pub struct BoardData {
     pub score_mean2: f64,
     pub score_stdev: f64,
     pub score_stdev2: f64,
+    pub best_moves: Vec<MoveData>,
+    pub best_moves2: Vec<MoveData>,
+    pub playouts: usize,
+    pub playouts2: usize,
+    pub is_kata_data: bool,
+    pub is_kata_data2: bool,
+    pub match_info: Option<MoveMatchInfo>,
+    pub match_info2: Option<MoveMatchInfo>,
     pub properties: HashMap<String, String>,
 }
 
@@ -364,6 +386,14 @@ impl Board {
             score_mean2: 0.0,
             score_stdev: 0.0,
             score_stdev2: 0.0,
+            best_moves: Vec::new(),
+            best_moves2: Vec::new(),
+            playouts: 0,
+            playouts2: 0,
+            is_kata_data: false,
+            is_kata_data2: false,
+            match_info: None,
+            match_info2: None,
             properties: self.properties.clone(),
         }
     }

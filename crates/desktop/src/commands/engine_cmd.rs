@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use ponder_core::engine::gtp::{EngineAnalysis, EngineConfig, EngineListener, EngineType, GtpEngine};
 use ponder_core::engine::move_data::MoveData;
+use ponder_core::go::board_history::EngineSlot;
 use ponder_core::go::stone::Stone;
 use crate::AppState;
 
@@ -42,11 +43,26 @@ pub struct EngineStatus {
     pub total_playouts: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct AnalysisData {
     pub best_moves: Vec<MoveData>,
     pub total_playouts: usize,
     pub ownership: Vec<f64>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AnalysisOverview {
+    pub black_captures: usize,
+    pub white_captures: usize,
+    pub komi: f64,
+    pub move_number: usize,
+    pub rules: Option<String>,
+    pub score_lead: Option<f64>,
+    pub best_move: Option<String>,
+    pub winrate: Option<f64>,
+    pub total_playouts: usize,
+    pub black_match_percent: Option<f64>,
+    pub white_match_percent: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +93,10 @@ impl EngineListener for TauriEngineListener {
             total_playouts: analysis.total_playouts,
             ownership: analysis.ownership,
         };
+        if let Some(state) = self.app_handle.try_state::<AppState>() {
+            let overview = record_analysis_and_build_overview(&state, EngineSlot::One, &data);
+            let _ = self.app_handle.emit("engine:overview", &overview);
+        }
         let _ = self.app_handle.emit("engine:analysis", &data);
     }
 
@@ -134,6 +154,10 @@ impl EngineListener for TauriEngine2Listener {
             total_playouts: analysis.total_playouts,
             ownership: analysis.ownership,
         };
+        if let Some(state) = self.app_handle.try_state::<AppState>() {
+            let overview = record_analysis_and_build_overview(&state, EngineSlot::Two, &data);
+            let _ = self.app_handle.emit("engine2:overview", &overview);
+        }
         let _ = self.app_handle.emit("engine2:analysis", &data);
     }
 
@@ -272,6 +296,62 @@ pub fn get_analysis(state: State<AppState>) -> Result<AnalysisData, String> {
     }
 }
 
+#[tauri::command]
+pub fn get_analysis_overview(state: State<AppState>) -> AnalysisOverview {
+    analysis_overview_from_history(&state, EngineSlot::One)
+}
+
+fn analysis_overview_from_history(state: &State<AppState>, slot: EngineSlot) -> AnalysisOverview {
+    let history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+    build_analysis_overview(&history, slot)
+}
+
+fn record_analysis_and_build_overview(
+    state: &State<AppState>,
+    slot: EngineSlot,
+    data: &AnalysisData,
+) -> AnalysisOverview {
+    let mut history = state.history.lock().unwrap_or_else(|e| e.into_inner());
+    history.record_analysis(slot, data.best_moves.clone(), data.total_playouts);
+    build_analysis_overview(&history, slot)
+}
+
+fn build_analysis_overview(
+    history: &ponder_core::go::board_history::BoardHistoryList,
+    slot: EngineSlot,
+) -> AnalysisOverview {
+    let data = history.get_data();
+    let summary = history.match_summary(slot);
+    let (best_moves, total_playouts, score_lead, winrate) = match slot {
+        EngineSlot::One => (
+            &data.best_moves,
+            data.playouts,
+            data.is_kata_data.then_some(data.score_mean),
+            (!data.best_moves.is_empty()).then_some(data.winrate),
+        ),
+        EngineSlot::Two => (
+            &data.best_moves2,
+            data.playouts2,
+            data.is_kata_data2.then_some(data.score_mean2),
+            (!data.best_moves2.is_empty()).then_some(data.winrate2),
+        ),
+    };
+
+    AnalysisOverview {
+        black_captures: data.black_captures,
+        white_captures: data.white_captures,
+        komi: data.komi,
+        move_number: data.move_number,
+        rules: None,
+        score_lead,
+        best_move: best_moves.first().map(|m| m.coordinate.clone()),
+        winrate,
+        total_playouts,
+        black_match_percent: summary.black_match_percent,
+        white_match_percent: summary.white_match_percent,
+    }
+}
+
 fn sync_engine_position(engine: &GtpEngine, board_size: usize, komi: f64, moves: &[(String, String)]) {
     engine.boardsize(board_size);
     engine.komi(komi);
@@ -394,4 +474,9 @@ pub fn get_analysis2(state: State<AppState>) -> Result<AnalysisData, String> {
         }
         None => Err("No second engine running".to_string()),
     }
+}
+
+#[tauri::command]
+pub fn get_analysis2_overview(state: State<AppState>) -> AnalysisOverview {
+    analysis_overview_from_history(&state, EngineSlot::Two)
 }

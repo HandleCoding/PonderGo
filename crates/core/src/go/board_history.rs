@@ -1,4 +1,5 @@
-use crate::go::board::{Board, BoardData, PlaceResult};
+use crate::engine::move_data::MoveData;
+use crate::go::board::{name_to_coord, Board, BoardData, MoveMatchInfo, PlaceResult};
 use crate::go::stone::Stone;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -244,6 +245,34 @@ impl Default for GameInfo {
     }
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub enum EngineSlot {
+    One,
+    Two,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MatchSettings {
+    pub match_ai_moves: usize,
+    pub match_ai_percents_playouts: f64,
+}
+
+impl Default for MatchSettings {
+    fn default() -> Self {
+        Self {
+            match_ai_moves: 3,
+            match_ai_percents_playouts: 20.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MatchSummary {
+    pub black_match_percent: Option<f64>,
+    pub white_match_percent: Option<f64>,
+}
+
 /// Doubly-linked game tree, mirroring BoardHistoryList.java.
 ///
 /// The `root` holds a strong reference to the root node (keeping the tree alive).
@@ -366,6 +395,136 @@ impl BoardHistoryList {
         }
     }
 
+
+    pub fn record_analysis(&mut self, slot: EngineSlot, best_moves: Vec<MoveData>, total_playouts: usize) {
+        {
+            let mut head = self.head.borrow_mut();
+            let data = &mut head.data;
+            match slot {
+                EngineSlot::One => {
+                    data.best_moves = best_moves;
+                    data.playouts = total_playouts;
+                    if let Some(best) = data.best_moves.first() {
+                        data.winrate = best.winrate;
+                        data.score_mean = best.score_mean;
+                        data.score_stdev = best.score_stdev;
+                        data.is_kata_data = best.is_kata_data;
+                    }
+                }
+                EngineSlot::Two => {
+                    data.best_moves2 = best_moves;
+                    data.playouts2 = total_playouts;
+                    if let Some(best) = data.best_moves2.first() {
+                        data.winrate2 = best.winrate;
+                        data.score_mean2 = best.score_mean;
+                        data.score_stdev2 = best.score_stdev;
+                        data.is_kata_data2 = best.is_kata_data;
+                    }
+                }
+            }
+        }
+
+        self.recompute_child_matches(&self.head.clone(), slot, MatchSettings::default());
+    }
+
+    fn recompute_child_matches(&self, parent: &NodeRef, slot: EngineSlot, settings: MatchSettings) {
+        let children = parent.borrow().variations.clone();
+        for child in children {
+            Self::compute_match_for_node(&child, slot, settings);
+        }
+    }
+
+    pub fn compute_match_for_node(node: &NodeRef, slot: EngineSlot, settings: MatchSettings) {
+        let Some(parent) = node.borrow().previous() else {
+            return;
+        };
+
+        let parent_data = parent.borrow().data.clone();
+        let mut node_borrow = node.borrow_mut();
+        let previous_playouts = match slot {
+            EngineSlot::One => parent_data.playouts,
+            EngineSlot::Two => parent_data.playouts2,
+        };
+        let Some(last_move) = node_borrow.data.last_move else {
+            Self::set_match_info(&mut node_borrow.data, slot, None);
+            return;
+        };
+
+        let candidates = match slot {
+            EngineSlot::One => &parent_data.best_moves,
+            EngineSlot::Two => &parent_data.best_moves2,
+        };
+        let max_playouts = candidates.iter().map(|m| m.playouts).max().unwrap_or(0);
+        if candidates.is_empty() || max_playouts == 0 || previous_playouts == 0 {
+            Self::set_match_info(&mut node_borrow.data, slot, None);
+            return;
+        }
+
+        let mut match_info = None;
+        for (i, candidate) in candidates.iter().enumerate() {
+            let Some(coord) = name_to_coord(&candidate.coordinate, parent_data.board_size) else {
+                continue;
+            };
+            if coord != last_move {
+                continue;
+            }
+
+            let ratio = candidate.playouts as f64 / max_playouts as f64;
+            match_info = Some(MoveMatchInfo {
+                analyzed_match_value: true,
+                is_black: node_borrow.data.last_move_color.is_black(),
+                is_best: i == 0,
+                is_match_ai: i < settings.match_ai_moves
+                    && ratio * 100.0 >= settings.match_ai_percents_playouts,
+                percent_match: if i == 0 { 1.0 } else { ratio },
+                candidate_number: Some(i + 1),
+                move_number: node_borrow.data.move_number,
+                previous_playouts,
+            });
+            break;
+        }
+
+        Self::set_match_info(&mut node_borrow.data, slot, match_info);
+    }
+
+    fn set_match_info(data: &mut BoardData, slot: EngineSlot, info: Option<MoveMatchInfo>) {
+        match slot {
+            EngineSlot::One => data.match_info = info,
+            EngineSlot::Two => data.match_info2 = info,
+        }
+    }
+
+    pub fn match_summary(&self, slot: EngineSlot) -> MatchSummary {
+        let mut black_total = 0.0;
+        let mut black_count = 0usize;
+        let mut white_total = 0.0;
+        let mut white_count = 0usize;
+        let mut current = Some(self.head.clone());
+
+        while let Some(node) = current {
+            let node_borrow = node.borrow();
+            let info = match slot {
+                EngineSlot::One => node_borrow.data.match_info.as_ref(),
+                EngineSlot::Two => node_borrow.data.match_info2.as_ref(),
+            };
+            if let Some(info) = info.filter(|info| info.analyzed_match_value) {
+                if info.is_black {
+                    black_total += info.percent_match;
+                    black_count += 1;
+                } else {
+                    white_total += info.percent_match;
+                    white_count += 1;
+                }
+            }
+            current = node_borrow.previous();
+        }
+
+        MatchSummary {
+            black_match_percent: (black_count > 0).then(|| black_total * 100.0 / black_count as f64),
+            white_match_percent: (white_count > 0).then(|| white_total * 100.0 / white_count as f64),
+        }
+    }
+
     /// Navigate to the start of the game.
     pub fn to_start(&mut self) {
         while self.previous().is_some() {}
@@ -471,6 +630,8 @@ impl BoardHistoryList {
 
                 // Legal move — add to history
                 self.add_or_goto(new_data, new_branch);
+                BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::One, MatchSettings::default());
+                BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::Two, MatchSettings::default());
                 PlaceResult::Legal
             }
             PlaceResult::IllegalOccupied | PlaceResult::IllegalSuicide | PlaceResult::IllegalKo => {
@@ -487,6 +648,8 @@ impl BoardHistoryList {
         let new_data = board.to_data();
         let new_branch = self.head.borrow().next().is_some();
         self.add_or_goto(new_data, new_branch);
+        BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::One, MatchSettings::default());
+        BoardHistoryList::compute_match_for_node(&self.head, EngineSlot::Two, MatchSettings::default());
     }
 
     /// Get the current move number.
@@ -507,6 +670,126 @@ mod tests {
 
     fn make_board() -> Board {
         Board::new_19x19()
+    }
+
+
+    fn move_data(coordinate: &str, playouts: usize) -> MoveData {
+        MoveData {
+            coordinate: coordinate.to_string(),
+            playouts,
+            winrate: 50.0,
+            score_mean: 0.0,
+            ..MoveData::default()
+        }
+    }
+
+    #[test]
+    fn test_match_best_candidate_is_100_percent() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(EngineSlot::One, vec![move_data("D16", 100), move_data("Q4", 50)], 150);
+
+        let result = history.place(&mut board, 3, 3, Stone::Black, false);
+        assert_eq!(result, PlaceResult::Legal);
+
+        let info = history.head.borrow().data.match_info.clone().unwrap();
+        assert!(info.analyzed_match_value);
+        assert!(info.is_best);
+        assert!(info.is_match_ai);
+        assert_eq!(info.candidate_number, Some(1));
+        assert!((info.percent_match - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_match_non_best_candidate_uses_playout_ratio() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(EngineSlot::One, vec![move_data("D16", 100), move_data("Q4", 40)], 140);
+
+        let result = history.place(&mut board, 15, 15, Stone::Black, false);
+        assert_eq!(result, PlaceResult::Legal);
+
+        let info = history.head.borrow().data.match_info.clone().unwrap();
+        assert!(!info.is_best);
+        assert!(info.is_match_ai);
+        assert_eq!(info.candidate_number, Some(2));
+        assert!((info.percent_match - 0.4).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_match_can_have_percent_without_ai_match_when_outside_top_n() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(
+            EngineSlot::One,
+            vec![move_data("D16", 100), move_data("Q4", 90), move_data("D4", 80), move_data("Q16", 70)],
+            340,
+        );
+
+        let result = history.place(&mut board, 15, 3, Stone::Black, false);
+        assert_eq!(result, PlaceResult::Legal);
+
+        let info = history.head.borrow().data.match_info.clone().unwrap();
+        assert!(!info.is_match_ai);
+        assert_eq!(info.candidate_number, Some(4));
+        assert!((info.percent_match - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_match_below_playout_threshold_is_not_ai_match() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(EngineSlot::One, vec![move_data("D16", 100), move_data("Q4", 10)], 110);
+
+        let result = history.place(&mut board, 15, 15, Stone::Black, false);
+        assert_eq!(result, PlaceResult::Legal);
+
+        let info = history.head.borrow().data.match_info.clone().unwrap();
+        assert!(!info.is_match_ai);
+        assert!((info.percent_match - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_match_unlisted_candidate_is_not_aggregated() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(EngineSlot::One, vec![move_data("D16", 100), move_data("Q4", 50)], 150);
+
+        let result = history.place(&mut board, 10, 10, Stone::Black, false);
+        assert_eq!(result, PlaceResult::Legal);
+        assert!(history.head.borrow().data.match_info.is_none());
+        assert!(history.match_summary(EngineSlot::One).black_match_percent.is_none());
+    }
+
+    #[test]
+    fn test_match_summary_includes_non_ai_candidate_ratio() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(
+            EngineSlot::One,
+            vec![move_data("D16", 100), move_data("Q4", 90), move_data("D4", 80), move_data("Q16", 70)],
+            340,
+        );
+
+        assert_eq!(history.place(&mut board, 15, 3, Stone::Black, false), PlaceResult::Legal);
+
+        let summary = history.match_summary(EngineSlot::One);
+        assert!((summary.black_match_percent.unwrap() - 70.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_match_summary_aggregates_black_and_white_separately() {
+        let mut board = make_board();
+        let mut history = BoardHistoryList::new(board.to_data());
+        history.record_analysis(EngineSlot::One, vec![move_data("D16", 100), move_data("Q4", 50)], 150);
+        assert_eq!(history.place(&mut board, 3, 3, Stone::Black, false), PlaceResult::Legal);
+
+        history.record_analysis(EngineSlot::One, vec![move_data("Q4", 80), move_data("D4", 40)], 120);
+        assert_eq!(history.place(&mut board, 3, 15, Stone::White, false), PlaceResult::Legal);
+
+        let summary = history.match_summary(EngineSlot::One);
+        assert!((summary.black_match_percent.unwrap() - 100.0).abs() < f64::EPSILON);
+        assert!((summary.white_match_percent.unwrap() - 50.0).abs() < f64::EPSILON);
     }
 
     #[test]

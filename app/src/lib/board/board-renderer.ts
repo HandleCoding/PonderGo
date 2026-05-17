@@ -9,9 +9,10 @@ const BACKGROUND_IMG_URL = '/theme/background.jpg';
 
 // ===== 颜色常量 (Yzy 风格) =====
 // Yzy 直接用 Color.BLACK (纯黑) 画网格线
-const GRID_COLOR = '#2a1a05';
-const STAR_COLOR = '#2a1a05';
-const LABEL_COLOR = '#2a1a05';
+const GRID_COLOR = 'rgba(42, 26, 5, 0.72)';
+const BORDER_GRID_COLOR = 'rgba(42, 26, 5, 0.82)';
+const STAR_COLOR = 'rgba(42, 26, 5, 0.8)';
+const LABEL_COLOR = 'rgba(42, 26, 5, 0.82)';
 
 // ===== 缓存的图片对象 =====
 let cachedBoardImg: HTMLImageElement | null = null;
@@ -98,6 +99,8 @@ function drawBackground(ctx: CanvasRenderingContext2D, _board: BoardState, coord
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(cachedBoardImg, 0, 0, boardPx, boardPx);
+    ctx.fillStyle = 'rgba(255, 246, 214, 0.13)';
+    ctx.fillRect(0, 0, boardPx, boardPx);
   } else {
     // 图片还没加载完时的 fallback 纯色
     ctx.fillStyle = '#D9984D'; // Yzy pure-board-color
@@ -117,10 +120,10 @@ function drawGrid(ctx: CanvasRenderingContext2D, board: BoardState, coords: Coor
   //     borderStroke = Math.max(boardWidth > 560 ? 2f : 1f, availableWidth / 481f)
   // 不乘 dpr！因为 fillRect 在 setTransform(dpr) 下坐标已被缩放，
   // fillRect 的尺寸参数也是逻辑像素，会自动被 transform 缩放到物理像素
-  const normalLw = Math.max(0.7, cellPx / 55);
-  const borderLw = Math.max(1.1, cellPx / 28);
+  const normalLw = Math.max(0.55, cellPx / 68);
+  const borderLw = Math.max(0.95, cellPx / 34);
 
-  ctx.fillStyle = '#2a1a05';
+  ctx.fillStyle = GRID_COLOR;
 
   for (let i = 1; i < size - 1; i++) {
     // 横线（从左边距到右边距）
@@ -136,6 +139,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, board: BoardState, coords: Coor
   }
 
   // 边框加粗
+  ctx.fillStyle = BORDER_GRID_COLOR;
   const bw = borderLw;
   const last = size - 1;
   const x0 = coords.stoneX(0), y0 = coords.stoneY(0);

@@ -38,7 +38,9 @@ export class HttpClient implements ApiClient {
   async togglePonder(): Promise<boolean> { throw new Error('Not implemented'); }
   async genmove(_color: string): Promise<void> { throw new Error('Not implemented'); }
   async getAnalysis(): Promise<any> { throw new Error('Not implemented'); }
+  async getAnalysisOverview(): Promise<any> { throw new Error('Not implemented'); }
   onAnalysisUpdate(_callback: (data: any) => void): () => void { return () => {}; }
+  onAnalysisOverview(_callback: (data: any) => void): () => void { return () => {}; }
   onEngineIdentified(_callback: (data: any) => void): () => void { return () => {}; }
   onEngineExit(_callback: (normal: boolean) => void): () => void { return () => {}; }
   onGenmove(_callback: (color: string, coord: string) => void): () => void { return () => {}; }
@@ -51,7 +53,9 @@ export class HttpClient implements ApiClient {
   async getEngine2Status(): Promise<any> { throw new Error('Not implemented'); }
   async togglePonder2(): Promise<boolean> { throw new Error('Not implemented'); }
   async getAnalysis2(): Promise<any> { throw new Error('Not implemented'); }
+  async getAnalysis2Overview(): Promise<any> { throw new Error('Not implemented'); }
   onAnalysis2Update(_callback: (data: any) => void): () => void { return () => {}; }
+  onAnalysis2Overview(_callback: (data: any) => void): () => void { return () => {}; }
   onEngine2Identified(_callback: (data: any) => void): () => void { return () => {}; }
   onEngine2Exit(_callback: (normal: boolean) => void): () => void { return () => {}; }
   async getConfig(): Promise<any> { return defaultAppConfig(); }

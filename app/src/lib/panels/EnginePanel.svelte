@@ -1,10 +1,12 @@
 <script lang="ts">
-  import type { EngineStatus, AnalysisData, MoveData } from '../api/types';
+  import type { EngineStatus, AnalysisData, AnalysisOverview, BoardState, MoveData } from '../api/types';
   import EmptyState from '../components/EmptyState.svelte';
 
   let {
     status,
     analysis = null,
+    board = null,
+    overview = null,
     compact = false,
     label = 'Engine 1',
     profileName = '',
@@ -21,6 +23,8 @@
   }: {
     status: EngineStatus;
     analysis?: AnalysisData | null;
+    board?: BoardState | null;
+    overview?: AnalysisOverview | null;
     compact?: boolean;
     label?: string;
     profileName?: string;
@@ -67,6 +71,29 @@
     return `${prefix}${Math.abs(score).toFixed(1)}`;
   }
 
+  function formatMatch(percent: number | null | undefined): string {
+    return percent == null ? '--' : `${percent.toFixed(1)}%`;
+  }
+
+  function formatScoreLead(score: number | null | undefined): string {
+    if (score == null) return '--';
+    if (Math.abs(score) < 0.05) return 'Jigo';
+    const prefix = score > 0 ? 'B+' : 'W+';
+    return `${prefix}${Math.abs(score).toFixed(1)}`;
+  }
+
+  function formatRules(rules: string | null | undefined): string {
+    if (!rules) return 'Rules --';
+    const labels: Record<string, string> = {
+      chinese: '中国规则',
+      japanese: '日本规则',
+      'tromp-taylor': 'Tromp-Taylor',
+      'chn-ancient': '中国古棋',
+      others: '其他规则',
+    };
+    return labels[rules] ?? rules;
+  }
+
   // Simulated progress (0-1) based on playouts ramping up
   const progress = $derived(
     analysis && analysis.total_playouts > 0
@@ -76,6 +103,19 @@
 
   const topMoves = $derived(analysis?.best_moves?.slice(0, 10) ?? []);
   const bestWinrate = $derived(topMoves.length > 0 ? topMoves[0].winrate : 50);
+  const currentOverview = $derived(overview ?? (board ? {
+    black_captures: board.black_captures,
+    white_captures: board.white_captures,
+    komi: board.komi,
+    move_number: board.move_number,
+    rules: null,
+    score_lead: topMoves[0]?.is_kata_data ? topMoves[0].score_mean : null,
+    best_move: topMoves[0]?.coordinate ?? null,
+    winrate: topMoves[0]?.winrate ?? null,
+    total_playouts: analysis?.total_playouts ?? 0,
+    black_match_percent: null,
+    white_match_percent: null,
+  } satisfies AnalysisOverview : null));
 
   let activeTab = $state<'moves' | 'info'>('moves');
 </script>
@@ -116,26 +156,28 @@
   <div class="engine-panel">
     <div class="engine-header">
       <div class="engine-header-main">
-        <div>
+        <div class="engine-identity">
           <div class="engine-title">
-            <svg class="engine-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg class="engine-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             <span class="engine-slot">{label}</span>
             <span class="engine-name">{status.running ? status.name : profileName || 'No profile'}</span>
           </div>
-          {#if status.running}
-            <div class="engine-meta">
+          <div class="engine-meta">
+            {#if status.running}
               <span class="status-badge" class:pondering={status.pondering} class:thinking={status.thinking}>
                 {#if status.thinking}
                   <span class="pulse-dot"></span>
                 {/if}
-                {status.pondering ? 'Pondering...' : status.thinking ? 'Thinking...' : 'Idle'}
+                {status.pondering ? 'Pondering' : status.thinking ? 'Thinking' : 'Idle'}
               </span>
               {#if analysis && analysis.total_playouts > 0}
-                <span class="visits">{formatPlayouts(analysis.total_playouts)}</span>
+                <span class="visits">{formatPlayouts(analysis.total_playouts)} visits</span>
                 <span class="visits">{formatTime(analysis.total_playouts / 1000)}</span>
               {/if}
-            </div>
-          {/if}
+            {:else}
+              <span class="status-badge muted">{hasConfiguredEngine ? 'Ready to analyze' : 'Choose a reusable profile'}</span>
+            {/if}
+          </div>
         </div>
         <div class="engine-actions">
           {#if status.running}
@@ -161,27 +203,52 @@
       </div>
     {/if}
 
-    {#if topMoves.length > 0}
-      <!-- Summary row (Yzy-style) -->
-      <div class="summary-row">
-        <div class="summary-item">
-          <span class="summary-label">吻合度</span>
-          <span class="summary-value">{topMoves[0]?.winrate.toFixed(1) ?? '-'}%</span>
+    {#if currentOverview || topMoves.length > 0}
+      <!-- Overview row (Yzy-style) -->
+      <div class="summary-row yzy-overview">
+        <div class="overview-side black-side">
+          <div class="side-heading">
+            <span class="stone-dot black-stone"></span>
+            <span>黑</span>
+          </div>
+          <div class="overview-metric">
+            <span>吻合度</span>
+            <strong>{formatMatch(currentOverview?.black_match_percent)}</strong>
+          </div>
+          <div class="overview-metric">
+            <span>提子</span>
+            <strong>{currentOverview?.black_captures ?? board?.black_captures ?? 0}</strong>
+          </div>
         </div>
-        <div class="summary-item">
-          <span class="summary-label">胜率</span>
-          <span class="summary-value" style="color: {bestWinrate >= 50 ? 'var(--green)' : 'var(--red)'}">{bestWinrate.toFixed(1)}%</span>
+        <div class="overview-center">
+          <span class="rules-label">{formatRules(currentOverview?.rules)}</span>
+          <strong>Move {currentOverview?.move_number ?? board?.move_number ?? 0}</strong>
+          <span>Komi {((currentOverview?.komi ?? board?.komi) ?? 0).toFixed(1)}</span>
         </div>
-        <div class="summary-item">
-          <span class="summary-label">提子</span>
-          <span class="summary-value">{formatPlayouts(analysis?.total_playouts ?? 0)}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">目差</span>
-          <span class="summary-value">{scoreDisplay(topMoves[0]?.score_mean ?? 0, topMoves[0]?.is_kata_data ?? false)}</span>
+        <div class="overview-side white-side">
+          <div class="side-heading">
+            <span class="stone-dot white-stone"></span>
+            <span>白</span>
+          </div>
+          <div class="overview-metric">
+            <span>吻合度</span>
+            <strong>{formatMatch(currentOverview?.white_match_percent)}</strong>
+          </div>
+          <div class="overview-metric">
+            <span>提子</span>
+            <strong>{currentOverview?.white_captures ?? board?.white_captures ?? 0}</strong>
+          </div>
         </div>
       </div>
 
+      <div class="overview-strip">
+        <span>首选 <strong>{currentOverview?.best_move ?? topMoves[0]?.coordinate ?? '--'}</strong></span>
+        <span>胜率 <strong class:good={(currentOverview?.winrate ?? bestWinrate) >= 50}>{currentOverview?.winrate == null ? '--' : `${currentOverview.winrate.toFixed(1)}%`}</strong></span>
+        <span>目差 <strong>{formatScoreLead(currentOverview?.score_lead)}</strong></span>
+        <span>计算量 <strong>{formatPlayouts(currentOverview?.total_playouts ?? analysis?.total_playouts ?? 0)}</strong></span>
+      </div>
+
+      {#if topMoves.length > 0}
       <!-- Winrate mini bar -->
       <div class="wr-overview-bar">
         <div class="wr-overview-black" style="width: {bestWinrate}%"></div>
@@ -241,16 +308,20 @@
           <span class="pv-text">{topMoves[0].variation.join(' → ')}</span>
         </div>
       {/if}
+      {/if}
     {:else if status.running}
       <EmptyState compact title="Waiting for analysis" message="Engine is running. Analysis data will appear once visits arrive." />
     {:else}
-      <EmptyState
-        compact
-        title={hasConfiguredEngine ? 'Engine is ready' : 'No profile selected'}
-        message={hasConfiguredEngine ? 'Start the engine to begin live analysis.' : `Select a profile for ${label}, or add reusable profiles in settings.`}
-        actionLabel={hasConfiguredEngine ? 'Start Engine' : 'Select Profile'}
-        onAction={hasConfiguredEngine ? onStartEngine : onSelectProfile}
-      />
+      <div class="engine-ready-state">
+        <div class="ready-copy">
+          <span class="ready-kicker">{label}</span>
+          <strong>{hasConfiguredEngine ? 'Ready to analyze' : 'No profile selected'}</strong>
+          <span>{hasConfiguredEngine ? 'Start live analysis when you are ready.' : 'Select a profile or add one in settings.'}</span>
+        </div>
+        <button class="ready-action" onclick={hasConfiguredEngine ? onStartEngine : onSelectProfile}>
+          {hasConfiguredEngine ? 'Start' : 'Select Profile'}
+        </button>
+      </div>
     {/if}
   </div>
 {/if}
@@ -258,40 +329,41 @@
 <style>
   /* Full panel */
   .engine-panel {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
-    border-radius: 8px;
+    --move-row-height: 26px;
+    --moves-table-header-height: 25px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    border-radius: 10px;
     border: 1px solid var(--border-subtle);
     overflow: hidden;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     display: flex;
     flex-direction: column;
-    max-height: clamp(220px, 34vh, 420px);
     min-height: 0;
   }
 
   :global([data-theme="light"]) .engine-panel,
   :global([data-theme="light"]) .engine-compact {
-    background: rgba(255, 255, 255, 0.94);
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(15, 23, 42, 0.07);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
   }
 
   .engine-header {
-    padding: 8px 12px;
+    padding: 7px 12px;
     border-bottom: 1px solid var(--border-subtle);
-    background: rgba(2, 6, 23, 0.14);
+    background: rgba(2, 6, 23, 0.06);
   }
 
   :global([data-theme="light"]) .engine-header,
   :global([data-theme="light"]) .table-header,
   :global([data-theme="light"]) .summary-row {
-    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.78));
     border-color: rgba(15, 23, 42, 0.08);
   }
 
   .engine-header-main {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
@@ -300,15 +372,16 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-end;
   }
 
   .engine-actions button {
-    padding: 5px 9px;
-    border-radius: var(--radius-md);
-    background: var(--bg-tertiary);
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-tertiary) 72%, transparent);
     color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
     font-size: 11px;
   }
 
@@ -319,23 +392,30 @@
   .engine-actions .primary {
     background: var(--accent);
     color: #fff;
+    border-color: transparent;
+    box-shadow: 0 5px 14px rgba(2, 132, 199, 0.18);
   }
 
   .engine-actions .danger:hover {
     color: var(--red);
   }
 
+  .engine-identity {
+    min-width: 0;
+  }
+
   .engine-title {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 0;
+    min-width: 0;
   }
 
   .engine-slot {
-    padding: 2px 7px;
+    padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(14, 165, 233, 0.14);
+    background: rgba(14, 165, 233, 0.1);
     color: var(--accent);
     font-size: 10px;
     font-weight: 800;
@@ -344,6 +424,10 @@
   }
 
   .engine-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 14px;
     font-weight: 700;
     color: var(--text-primary);
@@ -354,7 +438,7 @@
     align-items: center;
     gap: 10px;
     margin-top: 2px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .status-badge {
@@ -373,6 +457,12 @@
   .status-badge.thinking {
     background: rgba(14, 165, 233, 0.15);
     color: var(--accent);
+  }
+
+  .status-badge.muted {
+    background: transparent;
+    color: var(--text-muted);
+    padding-left: 0;
   }
 
   .pulse-dot {
@@ -411,7 +501,7 @@
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--green));
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 82%, #fff 8%), var(--green));
     border-radius: 2px;
     transition: width 0.3s ease;
   }
@@ -419,40 +509,134 @@
   /* Summary row (Yzy-style) */
   .summary-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    padding: 7px 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.8fr) minmax(0, 1fr);
+    padding: 5px 12px;
     border-bottom: 1px solid var(--border-subtle);
-    gap: 4px;
-    background: rgba(2, 6, 23, 0.08);
+    gap: 10px;
+    background: rgba(2, 6, 23, 0.06);
   }
 
-  .summary-item {
+  .yzy-overview {
+    align-items: stretch;
+  }
+
+  .overview-side {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .overview-side.white-side {
+    text-align: right;
+  }
+
+  .side-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .white-side .side-heading {
+    justify-content: flex-end;
+  }
+
+  .stone-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.24);
+  }
+
+  .black-stone {
+    background: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .white-stone {
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.28);
+  }
+
+  .overview-metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .white-side .overview-metric {
+    flex-direction: row-reverse;
+  }
+
+  .overview-metric strong {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  .overview-center {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 2px;
-  }
-
-  .summary-label {
-    font-size: 10px;
+    min-width: 0;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
+    font-size: 10px;
+    text-align: center;
   }
 
-  .summary-value {
-    font-size: 14px;
-    font-weight: 700;
+  .overview-center strong {
     color: var(--text-primary);
     font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  .rules-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .overview-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .overview-strip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .overview-strip strong {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .overview-strip strong.good {
+    color: var(--green);
   }
 
   /* Winrate overview bar */
   .wr-overview-bar {
     position: relative;
     display: flex;
-    height: 20px;
-    margin: 0 14px 6px;
+    height: 16px;
+    margin: 0 14px 4px;
     border-radius: 3px;
     overflow: hidden;
     background: var(--bg-tertiary);
@@ -503,11 +687,12 @@
   }
 
   .moves-table-shell {
-    min-height: 0;
-    max-height: clamp(126px, 20vh, 216px);
+    height: calc(var(--moves-table-header-height) + 5 * var(--move-row-height));
+    max-height: calc(var(--moves-table-header-height) + 5 * var(--move-row-height));
     overflow-y: auto;
     border-bottom: 1px solid var(--border-subtle);
     scrollbar-gutter: stable;
+    flex: 0 0 auto;
   }
 
   .moves-table-shell::-webkit-scrollbar {
@@ -526,7 +711,9 @@
   .table-header {
     display: grid;
     grid-template-columns: 36px 48px 1fr 64px 56px;
-    padding: 5px 12px;
+    padding: 0 12px;
+    height: var(--moves-table-header-height);
+    align-items: center;
     color: var(--text-muted);
     font-size: 10px;
     text-transform: uppercase;
@@ -546,7 +733,8 @@
     display: grid;
     grid-template-columns: 36px 48px 1fr 64px 56px;
     width: 100%;
-    padding: 3px 12px;
+    height: var(--move-row-height);
+    padding: 0 12px;
     align-items: center;
     border-bottom: 1px solid rgba(148, 163, 184, 0.07);
     transition: background 0.1s, box-shadow 0.1s, transform 0.1s;
@@ -570,7 +758,7 @@
   }
 
   .table-row.first {
-    background: rgba(14, 165, 233, 0.08);
+    background: rgba(14, 165, 233, 0.055);
   }
 
   .table-row.first:hover {
@@ -661,6 +849,57 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .engine-ready-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px 14px;
+    min-height: 72px;
+    color: var(--text-secondary);
+  }
+
+  .ready-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .ready-kicker {
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .ready-copy strong {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .ready-copy span:last-child {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .ready-action {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(14, 165, 233, 0.22);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ready-action:hover {
+    background: rgba(14, 165, 233, 0.16);
+  }
 
 
   @keyframes spin {
@@ -669,11 +908,11 @@
 
   /* Compact panel */
   .engine-compact {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
-    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    border-radius: 10px;
     border: 1px solid var(--border-subtle);
     padding: 8px 12px;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
   .compact-header {

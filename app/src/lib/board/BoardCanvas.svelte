@@ -140,10 +140,10 @@
     height: 100%;
   }
   .board-canvas {
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border-radius: 8px;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.18);
     cursor: pointer;
-    border: 1px solid rgba(0,0,0,0.25);
+    border: 1px solid rgba(42, 26, 5, 0.18);
     display: block;
   }
 </style>

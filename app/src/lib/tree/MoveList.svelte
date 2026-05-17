@@ -135,11 +135,11 @@
 
 <style>
   .movelist-card {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
-    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    border-radius: 10px;
     border: 1px solid var(--border-subtle);
     overflow: hidden;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -147,24 +147,24 @@
   }
 
   :global([data-theme="light"]) .movelist-card {
-    background: rgba(255, 255, 255, 0.94);
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(15, 23, 42, 0.07);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
   }
 
   .card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 34px;
+    min-height: 36px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border-subtle);
-    background: rgba(2, 6, 23, 0.14);
+    background: rgba(2, 6, 23, 0.08);
     flex-shrink: 0;
   }
 
   :global([data-theme="light"]) .card-header {
-    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.78));
     border-bottom-color: rgba(15, 23, 42, 0.08);
   }
 
@@ -188,8 +188,8 @@
 
   .tab.active {
     color: var(--text-primary);
-    background: rgba(14, 165, 233, 0.18);
-    box-shadow: inset 0 -2px 0 var(--accent);
+    background: rgba(14, 165, 233, 0.1);
+    box-shadow: inset 0 -1px 0 var(--accent);
   }
 
   .view-toggle {
@@ -297,20 +297,19 @@
   }
 
   .move-chip.current {
-    background: var(--accent);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.22);
-    transform: translateY(-1px);
+    background: rgba(14, 165, 233, 0.11);
+    border-color: rgba(14, 165, 233, 0.28);
+    color: var(--accent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset;
   }
 
   .move-chip.current::after {
     content: '';
     position: absolute;
     left: 50%;
-    bottom: -6px;
-    width: 6px;
-    height: 6px;
+    bottom: -5px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: var(--accent);
     transform: translateX(-50%);
@@ -340,7 +339,7 @@
   }
 
   .move-chip.current .chip-num {
-    color: rgba(255,255,255,0.7);
+    color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   }
 
   .chip-dot {
@@ -375,7 +374,7 @@
   }
 
   .move-chip.current .chip-branch {
-    color: rgba(255,255,255,0.7);
+    color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   }
 
   /* Tree view */
@@ -414,10 +413,10 @@
   }
 
   .tree-node.current {
-    background: var(--accent);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.3);
+    background: rgba(14, 165, 233, 0.11);
+    border-color: rgba(14, 165, 233, 0.28);
+    color: var(--accent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset;
   }
 
   .tree-node.variation {
@@ -471,6 +470,6 @@
   }
 
   .tree-node.current .node-branch {
-    color: rgba(255,255,255,0.7);
+    color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   }
 </style>

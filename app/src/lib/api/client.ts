@@ -2,6 +2,7 @@ import type {
   BoardState,
   EngineStatus,
   AnalysisData,
+  AnalysisOverview,
   SgfResult,
   StartEngineRequest,
   TreeNode,
@@ -29,7 +30,9 @@ export interface ApiClient {
   togglePonder(): Promise<boolean>;
   genmove(color: string): Promise<void>;
   getAnalysis(): Promise<AnalysisData>;
+  getAnalysisOverview(): Promise<AnalysisOverview>;
   onAnalysisUpdate(callback: (data: AnalysisData) => void): () => void;
+  onAnalysisOverview(callback: (data: AnalysisOverview) => void): () => void;
   onEngineIdentified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;
   onEngineExit(callback: (normal: boolean) => void): () => void;
   onGenmove(callback: (color: string, coord: string) => void): () => void;
@@ -40,7 +43,9 @@ export interface ApiClient {
   getEngine2Status(): Promise<EngineStatus>;
   togglePonder2(): Promise<boolean>;
   getAnalysis2(): Promise<AnalysisData>;
+  getAnalysis2Overview(): Promise<AnalysisOverview>;
   onAnalysis2Update(callback: (data: AnalysisData) => void): () => void;
+  onAnalysis2Overview(callback: (data: AnalysisOverview) => void): () => void;
   onEngine2Identified(callback: (data: { name: string; engine_type: EngineStatus['engine_type'] }) => void): () => void;
   onEngine2Exit(callback: (normal: boolean) => void): () => void;
 

@@ -57,6 +57,20 @@ export interface AnalysisData {
   ownership: number[];
 }
 
+export interface AnalysisOverview {
+  black_captures: number;
+  white_captures: number;
+  komi: number;
+  move_number: number;
+  rules: string | null;
+  score_lead: number | null;
+  best_move: string | null;
+  winrate: number | null;
+  total_playouts: number;
+  black_match_percent: number | null;
+  white_match_percent: number | null;
+}
+
 export interface SgfResult {
   success: boolean;
   message: string;

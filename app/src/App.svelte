@@ -13,7 +13,7 @@
   import ResizableSplitter from './lib/layout/ResizableSplitter.svelte';
   import AutoResizeBoard from './lib/layout/AutoResizeBoard.svelte';
   import { TauriClient } from './lib/api/tauri-client';
-  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type WinratePoint, type TreeNode, type AppConfig, type MoveData } from './lib/api/types';
+  import { defaultAppConfig, type BoardState, type EngineStatus, type AnalysisData, type AnalysisOverview, type WinratePoint, type TreeNode, type AppConfig, type MoveData } from './lib/api/types';
   import { isDesktop, minimizeWindow, toggleMaximizeWindow, closeWindow } from './lib/state/runtime';
   import { emptyFileState, markDirty, openSgfFile, refreshTreePath, saveSgfFile, type GameFileState } from './lib/state/game-actions';
   import { applyUiConfig, loadConfig, persistConfig } from './lib/state/config-state';
@@ -37,6 +37,8 @@
   });
   let analysis: AnalysisData | null = $state(null);
   let analysis2: AnalysisData | null = $state(null);
+  let analysisOverview: AnalysisOverview | null = $state(null);
+  let analysis2Overview: AnalysisOverview | null = $state(null);
   let winrateHistory: WinratePoint[] = $state([]);
   let treePath: TreeNode[] = $state([]);
   let error: string = $state('');
@@ -145,6 +147,7 @@
     try {
       board = await api.getBoard();
       fetchTreePath();
+      fetchAnalysisOverviews();
       error = '';
     } catch (e) { error = String(e); }
   }
@@ -154,6 +157,7 @@
       setBoard(await fn());
       fileState = markDirty(fileState);
       await fetchTreePath();
+      await fetchAnalysisOverviews();
       error = '';
     } catch (e) { error = String(e); }
   }
@@ -163,10 +167,19 @@
     treePath = await refreshTreePath(api);
   }
 
+  async function fetchAnalysisOverviews() {
+    if (!api) return;
+    const [overview1, overview2] = await Promise.all([
+      api.getAnalysisOverview(),
+      api.getAnalysis2Overview(),
+    ]);
+    analysisOverview = overview1;
+    analysis2Overview = overview2;
+  }
+
   async function placeMove(x: number, y: number) {
     if (!api || !board) return;
-    try { setBoard(await api.placeMove(x, y)); fileState = markDirty(fileState); await fetchTreePath(); error = ''; }
-    catch (e) { error = String(e); }
+    updateBoard(() => api!.placeMove(x, y));
   }
 
   async function passMove() {
@@ -193,9 +206,12 @@
     if (!api) { board = mockBoard(); fileState = { ...emptyFileState }; return; }
     try {
       board = await api.newGame(size);
+      analysisOverview = null;
+      analysis2Overview = null;
       winrateHistory = [];
       fileState = { ...emptyFileState };
       fetchTreePath();
+      fetchAnalysisOverviews();
       error = '';
     } catch (e) { error = String(e); }
   }
@@ -216,11 +232,11 @@
     if (editMode) {
       if (board.stones[y][x] !== 'EMPTY') {
         if (api) {
-          api.removeStone(x, y).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
+          api.removeStone(x, y).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); fetchAnalysisOverviews(); }).catch(e => { error = String(e); });
         }
       } else {
         if (api) {
-          api.addStone(x, y, editIsBlack).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); }).catch(e => { error = String(e); });
+          api.addStone(x, y, editIsBlack).then(b => { setBoard(b); fileState = markDirty(fileState); fetchTreePath(); fetchAnalysisOverviews(); }).catch(e => { error = String(e); });
         }
       }
     } else {
@@ -304,9 +320,12 @@
     try {
       const result = await openSgfFile(api);
       setBoard(result.board);
+      analysisOverview = null;
+      analysis2Overview = null;
       fileState = result.file;
       winrateHistory = [];
       treePath = await refreshTreePath(api);
+      await fetchAnalysisOverviews();
       error = '';
     } catch (e) {
       if (!String(e).includes('cancelled')) error = String(e);
@@ -351,7 +370,7 @@
 
   async function handleStopEngine() {
     if (!api) return;
-    try { engineStatus = await stopConfiguredEngine(api); analysis = null; error = ''; }
+    try { engineStatus = await stopConfiguredEngine(api); analysis = null; analysisOverview = null; error = ''; }
     catch (e) { error = String(e); }
   }
 
@@ -369,7 +388,7 @@
 
   async function handleStopEngine2() {
     if (!api) return;
-    try { engine2Status = await stopConfiguredEngine2(api); analysis2 = null; error = ''; }
+    try { engine2Status = await stopConfiguredEngine2(api); analysis2 = null; analysis2Overview = null; error = ''; }
     catch (e) { error = String(e); }
   }
 
@@ -404,6 +423,10 @@
       if (board) appendWinratePoint(board, data);
     });
 
+    api.onAnalysisOverview((data: AnalysisOverview) => {
+      analysisOverview = data;
+    });
+
     api.onEngineIdentified((data) => {
       engineStatus = { ...engineStatus, name: data.name, engine_type: data.engine_type, loaded: true };
     });
@@ -414,6 +437,10 @@
 
     api.onAnalysis2Update((data: AnalysisData) => {
       analysis2 = data;
+    });
+
+    api.onAnalysis2Overview((data: AnalysisOverview) => {
+      analysis2Overview = data;
     });
 
     api.onEngine2Identified((data) => {
@@ -511,6 +538,8 @@
               <EnginePanel
                 status={engineStatus}
                 {analysis}
+                board={board}
+                overview={analysisOverview}
                 label="Engine 1"
                 profileName={configuredEngine?.name ?? ''}
                 hasConfiguredEngine={configuredEngine != null}
@@ -528,6 +557,8 @@
                 <EnginePanel
                   status={engine2Status}
                   analysis={analysis2}
+                  board={board}
+                  overview={analysis2Overview}
                   hasConfiguredEngine={configuredEngine2 != null}
                   label="Engine 2"
                   profileName={configuredEngine2?.name ?? ''}
@@ -588,6 +619,7 @@
                       <span class="starter-mode">List</span>
                     </div>
                     <button class="starter-chip" onclick={() => gotoMove(0)} disabled={!api}>
+                      <span class="starter-dot"></span>
                       <span class="chip-num">0</span>
                       <span>Start</span>
                     </button>
@@ -707,8 +739,8 @@
 
   :global([data-theme="light"]) .app-layout {
     background:
-      radial-gradient(circle at 22% 10%, rgba(14, 165, 233, 0.055), transparent 30%),
-      linear-gradient(180deg, #fbfdff 0%, #f5f7fb 42%, #eef3f8 100%);
+      radial-gradient(circle at 18% 8%, rgba(14, 165, 233, 0.035), transparent 28%),
+      linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 48%, #f1f5f9 100%);
   }
 
   .main-content {
@@ -716,8 +748,8 @@
     flex: 1;
     overflow: hidden;
     min-height: 0;
-    padding: 2px;
-    gap: 4px;
+    padding: 6px;
+    gap: 8px;
   }
 
   .board-area {
@@ -725,15 +757,15 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2px;
+    padding: 6px;
     position: relative;
     width: 100%;
     height: 100%;
     overflow: hidden;
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: radial-gradient(circle at 50% 38%, rgba(148, 163, 184, 0.08), transparent 62%), color-mix(in srgb, var(--surface-1) 92%, transparent);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    border-radius: 12px;
+    background: radial-gradient(circle at 50% 38%, rgba(148, 163, 184, 0.055), transparent 62%), color-mix(in srgb, var(--surface-1) 94%, transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
   .board-area :global(canvas) {
@@ -741,9 +773,9 @@
   }
 
   :global([data-theme="light"]) .board-area {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.8));
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08) inset, 0 1px 0 rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(15, 23, 42, 0.065);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
   :global([data-theme="light"]) .board-area :global(canvas) {
@@ -782,16 +814,16 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--bg-primary) 96%, transparent));
+    border-radius: 12px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 97%, transparent), color-mix(in srgb, var(--bg-primary) 98%, transparent));
     overflow: hidden;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
   :global([data-theme="light"]) .right-panel {
-    background: rgba(255, 255, 255, 0.62);
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
+    background: rgba(255, 255, 255, 0.58);
+    border-color: rgba(15, 23, 42, 0.065);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.045), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
   /* Top zone: engine panels — natural height */
@@ -799,8 +831,8 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 6px 6px 0;
+    gap: 8px;
+    padding: 8px 8px 0;
   }
 
   .engine-source-switch {
@@ -836,7 +868,7 @@
   .engine-stack {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    gap: 8px;
   }
 
   .engine-stack.dual {
@@ -849,8 +881,8 @@
     flex: 1;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 6px;
-    padding: 6px;
+    gap: 8px;
+    padding: 8px;
     min-height: 0;
     overflow: hidden;
   }
@@ -860,8 +892,8 @@
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: minmax(150px, 1fr) minmax(112px, 132px);
-    gap: 6px;
+    grid-template-rows: minmax(132px, 0.95fr) minmax(112px, 132px);
+    gap: 8px;
     overflow: hidden;
   }
 
@@ -886,7 +918,7 @@
     min-height: 34px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border-subtle);
-    background: rgba(2, 6, 23, 0.14);
+    background: rgba(2, 6, 23, 0.08);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -906,8 +938,8 @@
 
   .skeleton-tab.active {
     color: var(--text-primary);
-    background: rgba(14, 165, 233, 0.18);
-    box-shadow: inset 0 -2px 0 var(--accent);
+    background: rgba(14, 165, 233, 0.1);
+    box-shadow: inset 0 -1px 0 var(--accent);
   }
 
   .skeleton-tools {
@@ -1049,25 +1081,25 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     min-height: 0;
     overflow-y: auto;
   }
 
   .sidebar-card {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
-    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    border-radius: 10px;
     border: 1px solid var(--border-subtle);
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
   :global([data-theme="light"]) .sidebar-card {
-    background: rgba(255, 255, 255, 0.94);
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(15, 23, 42, 0.07);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
   }
 
   .sb-header {
@@ -1078,11 +1110,11 @@
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
-    background: rgba(2, 6, 23, 0.14);
+    background: rgba(2, 6, 23, 0.08);
   }
 
   :global([data-theme="light"]) .sb-header {
-    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.78));
     border-bottom-color: rgba(15, 23, 42, 0.08);
   }
 
@@ -1162,17 +1194,17 @@
   }
 
   .panel-card {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 94%, #fff 2%), var(--bg-card));
-    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    border-radius: 10px;
     border: 1px solid var(--border-subtle);
     overflow: hidden;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
   :global([data-theme="light"]) .panel-card {
-    background: rgba(255, 255, 255, 0.94);
-    border-color: rgba(15, 23, 42, 0.08);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(15, 23, 42, 0.07);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
   }
 
   .panel-title {
@@ -1267,7 +1299,7 @@
     min-height: 34px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border-subtle);
-    background: rgba(2, 6, 23, 0.14);
+    background: rgba(2, 6, 23, 0.08);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1279,7 +1311,7 @@
   .starter-mode {
     padding: 3px 8px;
     border-radius: var(--radius-sm);
-    background: rgba(14, 165, 233, 0.18);
+    background: rgba(14, 165, 233, 0.1);
     color: var(--text-secondary);
     font-size: 11px;
     font-weight: 600;
@@ -1290,22 +1322,31 @@
     margin: 12px;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 5px 12px;
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--accent) 78%, #000 10%);
-    color: #fff;
+    gap: 7px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.08);
+    color: var(--accent);
+    border: 1px solid rgba(14, 165, 233, 0.16);
     font-family: var(--font-mono);
     font-size: 12px;
   }
 
+  .starter-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.72;
+  }
+
   .starter-chip:disabled {
-    opacity: 0.85;
+    opacity: 0.8;
     cursor: default;
   }
 
   .starter-chip .chip-num {
-    color: rgba(255, 255, 255, 0.72);
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
   }
 
   .tag {
