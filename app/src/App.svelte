@@ -47,9 +47,17 @@
   let showEngine2: boolean = $state(false);
   let comment: string = $state('');
   let boardAreaRef: HTMLDivElement | undefined = $state();
+  let rightPanelRef: HTMLDivElement | undefined = $state();
+  let workbenchMainRef: HTMLDivElement | undefined = $state();
+  let workbenchLeftRef: HTMLDivElement | undefined = $state();
+  let workbenchRightRef: HTMLDivElement | undefined = $state();
   let isDark: boolean = $state(true);
   let bgImageUrl: string | undefined = $state(undefined);
   let previewSize: number = $state(190); // Preview 棋盘正方形尺寸（px），可拖动角落缩放
+  let workbenchTopHeight: number = $state(168);
+  let workbenchRightWidth: number = $state(220);
+  let workbenchGraphHeight: number = $state(360);
+  let workbenchPreviewHeight: number = $state(260);
   let config: AppConfig = $state(defaultAppConfig());
   let fileState: GameFileState = $state({ ...emptyFileState });
   let showSettings: boolean = $state(false);
@@ -76,6 +84,7 @@
       ? engineStatus.pondering ? 'Pondering' : engineStatus.thinking ? 'Thinking' : 'Idle'
       : 'Off'
   );
+  const effectiveTopHeight = $derived(showEngine2 ? Math.max(workbenchTopHeight, 220) : workbenchTopHeight);
 
   async function applyLoadedConfig(loadedConfig: AppConfig) {
     const shouldPersistIds = needsEngineProfileIds(loadedConfig);
@@ -314,6 +323,69 @@
     window.addEventListener('mouseup', onUp);
   }
 
+  function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function startWorkbenchResize(
+    e: MouseEvent,
+    axis: 'x' | 'y',
+    cursor: 'col-resize' | 'row-resize',
+    onMove: (delta: number) => void,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    const start = axis === 'x' ? e.clientX : e.clientY;
+
+    function handleMove(ev: MouseEvent) {
+      onMove((axis === 'x' ? ev.clientX : ev.clientY) - start);
+    }
+
+    function handleUp() {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    document.body.style.cursor = cursor;
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }
+
+  function startResizeWorkbenchTop(e: MouseEvent) {
+    const startHeight = effectiveTopHeight;
+    startWorkbenchResize(e, 'y', 'row-resize', (delta) => {
+      const maxHeight = Math.max(showEngine2 ? 220 : 148, (rightPanelRef?.clientHeight ?? 720) - 320);
+      workbenchTopHeight = clamp(startHeight + delta, showEngine2 ? 220 : 148, maxHeight);
+    });
+  }
+
+  function startResizeWorkbenchColumns(e: MouseEvent) {
+    const startWidth = workbenchRightWidth;
+    startWorkbenchResize(e, 'x', 'col-resize', (delta) => {
+      const maxWidth = Math.max(220, (workbenchMainRef?.clientWidth ?? 620) - 260);
+      workbenchRightWidth = clamp(startWidth - delta, 200, maxWidth);
+    });
+  }
+
+  function startResizeGraph(e: MouseEvent) {
+    const startHeight = workbenchGraphHeight;
+    startWorkbenchResize(e, 'y', 'row-resize', (delta) => {
+      const maxHeight = Math.max(180, (workbenchLeftRef?.clientHeight ?? 520) - 120);
+      workbenchGraphHeight = clamp(startHeight + delta, 160, maxHeight);
+    });
+  }
+
+  function startResizePreviewCard(e: MouseEvent) {
+    const startHeight = workbenchPreviewHeight;
+    startWorkbenchResize(e, 'y', 'row-resize', (delta) => {
+      const maxHeight = Math.max(230, (workbenchRightRef?.clientHeight ?? 520) - 150);
+      workbenchPreviewHeight = clamp(startHeight + delta, 220, maxHeight);
+    });
+  }
+
   async function handleOpenSgf() {
     if (!api) return;
     busyAction = 'open';
@@ -521,12 +593,12 @@
       {/snippet}
 
       {#snippet rightContent()}
-        <div class="right-panel">
+        <div class="right-panel" bind:this={rightPanelRef}>
           {#if error}
             <div class="error-bar">{error}</div>
           {/if}
 
-          <div class="rp-top" class:dual={showEngine2}>
+          <div class="rp-top" class:dual={showEngine2} style:height={`${effectiveTopHeight}px`}>
             {#if showEngine2}
               <div class="engine-source-switch" aria-label="Board analysis source">
                 <span>Board recommendations</span>
@@ -571,10 +643,12 @@
             </div>
           </div>
 
+          <button class="workbench-resizer horizontal" type="button" aria-label="Resize engine panel" onmousedown={startResizeWorkbenchTop}></button>
+
           <!-- MAIN ZONE: two-column layout that fills remaining space -->
-          <div class="rp-main">
+          <div class="rp-main" bind:this={workbenchMainRef} style:grid-template-columns={`minmax(0, 1fr) 6px ${workbenchRightWidth}px`}>
             <!-- Left: Winrate graph (grows) + Move list -->
-            <div class="rp-col-left">
+            <div class="rp-col-left" bind:this={workbenchLeftRef} style:grid-template-rows={`${workbenchGraphHeight}px 6px minmax(112px, 1fr)`}>
               {#if winrateHistory.length > 0}
                 <div class="graph-container">
                   <WinrateGraph {winrateHistory} onNavigate={gotoMove} currentMove={board?.move_number ?? 0} boardMove={board?.move_number ?? 0} />
@@ -609,6 +683,7 @@
                   </div>
                 </div>
               {/if}
+              <button class="workbench-resizer horizontal" type="button" aria-label="Resize winrate graph" onmousedown={startResizeGraph}></button>
               <div class="movelist-container" class:empty={treePath.length === 0}>
                 {#if treePath.length > 0}
                   <MoveList {treePath} boardSize={board?.size ?? 19} onNavigate={gotoTreePath} />
@@ -628,8 +703,10 @@
               </div>
             </div>
 
+            <button class="workbench-resizer vertical" type="button" aria-label="Resize side column" onmousedown={startResizeWorkbenchColumns}></button>
+
             <!-- Right: Mini board + Comment sidebar -->
-            <div class="rp-col-right">
+            <div class="rp-col-right" bind:this={workbenchRightRef} style:grid-template-rows={`${workbenchPreviewHeight}px 6px minmax(150px, 1fr)`}>
               <div class="sidebar-card preview-card">
                 <div class="sb-header">
                   <span class="panel-title">Preview</span>
@@ -657,6 +734,8 @@
                   {/if}
                 </div>
               </div>
+
+              <button class="workbench-resizer horizontal" type="button" aria-label="Resize preview panel" onmousedown={startResizePreviewCard}></button>
 
               <div class="sidebar-card sb-comment">
                 <div class="sb-header">
@@ -826,13 +905,19 @@
     box-shadow: 0 12px 26px rgba(15, 23, 42, 0.045), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
-  /* Top zone: engine panels — natural height */
+  /* Top zone: engine panels */
   .rp-top {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 8px 8px 0;
+    min-height: 148px;
+    overflow: hidden;
+  }
+
+  .rp-top.dual {
+    min-height: 220px;
   }
 
   .engine-source-switch {
@@ -880,11 +965,66 @@
   .rp-main {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 8px;
-    padding: 8px;
+    gap: 0;
+    padding: 4px 8px 8px;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .workbench-resizer {
+    position: relative;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    opacity: 0.45;
+    transition: opacity 0.12s, background 0.12s;
+    z-index: 2;
+  }
+
+  .workbench-resizer::after {
+    content: '';
+    position: absolute;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 74%, transparent);
+  }
+
+  .workbench-resizer.horizontal {
+    height: 8px;
+    width: 100%;
+    cursor: row-resize;
+  }
+
+  .workbench-resizer.horizontal::after {
+    left: 14px;
+    right: 14px;
+    top: 3px;
+    height: 2px;
+  }
+
+  .workbench-resizer.vertical {
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+  }
+
+  .workbench-resizer.vertical::after {
+    top: 14px;
+    bottom: 14px;
+    left: 2px;
+    width: 2px;
+  }
+
+  .workbench-resizer:hover,
+  .workbench-resizer:focus-visible {
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    outline: none;
+  }
+
+  .workbench-resizer:hover::after,
+  .workbench-resizer:focus-visible::after {
+    background: color-mix(in srgb, var(--accent) 62%, var(--border));
   }
 
   /* Left column: graph + move list */
@@ -892,13 +1032,13 @@
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: minmax(132px, 0.95fr) minmax(112px, 132px);
-    gap: 8px;
+    gap: 0;
     overflow: hidden;
   }
 
   .graph-container {
     min-height: 0;
+    margin: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1079,11 +1219,10 @@
   /* Right column: sidebar */
   .rp-col-right {
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    gap: 0;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
   }
 
   .sidebar-card {
@@ -1093,6 +1232,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 0;
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
 
@@ -1134,6 +1274,8 @@
     justify-content: center;
     align-items: center;
     overflow: hidden;
+    max-width: 100%;
+    max-height: calc(100% - 34px);
   }
   .preview-card .sb-body-preview :global(canvas) {
     display: block;

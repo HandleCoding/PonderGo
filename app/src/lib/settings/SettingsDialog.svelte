@@ -42,21 +42,39 @@
   let activeTab = $state<'general' | 'engine' | 'board' | 'theme'>('general');
   let draft = $state<AppConfig>(createEmptyConfig());
   let wasOpen = $state(false);
+  let expandedEngineId: string | null = $state(null);
 
   $effect(() => {
     if (open && !wasOpen) {
       activeTab = initialTab;
       draft = cloneConfig(config);
+      expandedEngineId = null;
     }
     wasOpen = open;
   });
 
   function addEngine() {
-    draft.engines.push({ id: createEngineProfileId(), name: 'KataGo', command: defaultKatagoCommand, initial_commands: '', analyze_interval_cs: 10 });
+    const engine = { id: createEngineProfileId(), name: 'KataGo', command: defaultKatagoCommand, initial_commands: '', analyze_interval_cs: 10 };
+    draft.engines.push(engine);
+    expandedEngineId = engine.id;
   }
 
   function removeEngine(index: number) {
-    draft.engines.splice(index, 1);
+    const [removed] = draft.engines.splice(index, 1);
+    if (removed?.id === expandedEngineId) expandedEngineId = null;
+  }
+
+  function commandSummary(command: string): string {
+    const trimmed = command.trim();
+    return trimmed || 'No command configured';
+  }
+
+  function engineKey(engine: { id?: string }, index: number): string {
+    return engine.id ?? `engine-${index}`;
+  }
+
+  function toggleEngine(engineId: string) {
+    expandedEngineId = expandedEngineId === engineId ? null : engineId;
   }
 </script>
 
@@ -100,28 +118,45 @@
             <div class="empty-box">No engine profiles configured yet.</div>
           {:else}
             <div class="engine-list">
-              {#each draft.engines as engine, i (engine.id)}
-                <article class="engine-card">
-                  <div class="engine-card-header">
-                    <strong>Profile {i + 1}</strong>
-                    <button class="danger" onclick={() => removeEngine(i)}>Remove</button>
-                  </div>
-                  <label class="field">
-                    <span>Name</span>
-                    <input bind:value={engine.name} />
-                  </label>
-                  <label class="field">
-                    <span>Command</span>
-                    <input bind:value={engine.command} placeholder={defaultKatagoCommand} />
-                  </label>
-                  <label class="field">
-                    <span>Initial commands</span>
-                    <textarea bind:value={engine.initial_commands} placeholder="One GTP command per line"></textarea>
-                  </label>
-                  <label class="field small">
-                    <span>Analyze interval (cs)</span>
-                    <input type="number" min="1" bind:value={engine.analyze_interval_cs} />
-                  </label>
+              {#each draft.engines as engine, i (engine.id ?? i)}
+                <article class="engine-card" class:expanded={expandedEngineId === engineKey(engine, i)}>
+                  <button class="engine-card-summary" type="button" onclick={() => toggleEngine(engineKey(engine, i))} aria-expanded={expandedEngineId === engineKey(engine, i)}>
+                    <span class="engine-index">#{i + 1}</span>
+                    <span class="engine-summary-main">
+                      <strong>{engine.name.trim() || `Profile ${i + 1}`}</strong>
+                      <small class:invalid={!engine.command.trim()}>{commandSummary(engine.command)}</small>
+                    </span>
+                    <span class="engine-summary-meta">
+                      <span>{engine.analyze_interval_cs || 10} cs</span>
+                      <span class="engine-status" class:invalid={!engine.command.trim()}>{engine.command.trim() ? 'Configured' : 'Needs command'}</span>
+                      <span class="chevron" aria-hidden="true">⌄</span>
+                    </span>
+                  </button>
+
+                  {#if expandedEngineId === engineKey(engine, i)}
+                    <div class="engine-card-body">
+                      <div class="engine-card-header">
+                        <strong>Edit Profile {i + 1}</strong>
+                        <button type="button" class="danger" onclick={() => removeEngine(i)}>Remove</button>
+                      </div>
+                      <label class="field">
+                        <span>Name</span>
+                        <input bind:value={engine.name} />
+                      </label>
+                      <label class="field">
+                        <span>Command</span>
+                        <input bind:value={engine.command} placeholder={defaultKatagoCommand} />
+                      </label>
+                      <label class="field">
+                        <span>Initial commands</span>
+                        <textarea bind:value={engine.initial_commands} placeholder="One GTP command per line"></textarea>
+                      </label>
+                      <label class="field small">
+                        <span>Analyze interval (cs)</span>
+                        <input type="number" min="1" bind:value={engine.analyze_interval_cs} />
+                      </label>
+                    </div>
+                  {/if}
                 </article>
               {/each}
             </div>
@@ -327,14 +362,112 @@
   }
 
   .engine-card {
-    padding: 14px;
+    overflow: hidden;
+    transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+  }
+
+  .engine-card:hover,
+  .engine-card.expanded {
+    border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-card));
+  }
+
+  .engine-card.expanded {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent) inset;
+  }
+
+  .engine-card-summary {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    color: inherit;
+    text-align: left;
+  }
+
+  .engine-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    height: 30px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-tertiary) 80%, transparent);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  .engine-summary-main {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+  }
+
+  .engine-summary-main strong {
+    color: var(--text-primary);
+    font-size: 15px;
+  }
+
+  .engine-summary-main small {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .engine-summary-main small.invalid {
+    color: var(--red);
+    font-family: inherit;
+  }
+
+  .engine-summary-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .engine-status {
+    color: var(--green);
+    font-weight: 700;
+  }
+
+  .engine-status.invalid {
+    color: var(--yellow);
+  }
+
+  .chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+    transition: transform 0.12s;
+  }
+
+  .engine-card.expanded .chevron {
+    transform: rotate(180deg);
+  }
+
+  .engine-card-body {
+    display: grid;
+    gap: 12px;
+    padding: 0 16px 16px;
   }
 
   .engine-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    padding-top: 2px;
   }
 
   .theme-preview {
