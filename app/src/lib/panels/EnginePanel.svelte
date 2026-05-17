@@ -71,6 +71,14 @@
     return `${prefix}${Math.abs(score).toFixed(1)}`;
   }
 
+  function blackWinrate(winrate: number): number {
+    return board?.current_player === 'WHITE' ? 100 - winrate : winrate;
+  }
+
+  function blackScoreLead(score: number): number {
+    return board?.current_player === 'WHITE' ? -score : score;
+  }
+
   function formatMatch(percent: number | null | undefined): string {
     return percent == null ? '--' : `${percent.toFixed(1)}%`;
   }
@@ -102,16 +110,16 @@
   );
 
   const topMoves = $derived(analysis?.best_moves?.slice(0, 10) ?? []);
-  const bestWinrate = $derived(topMoves.length > 0 ? topMoves[0].winrate : 50);
+  const bestBlackWinrate = $derived(topMoves.length > 0 ? blackWinrate(topMoves[0].winrate) : 50);
   const currentOverview = $derived(overview ?? (board ? {
     black_captures: board.black_captures,
     white_captures: board.white_captures,
     komi: board.komi,
     move_number: board.move_number,
     rules: null,
-    score_lead: topMoves[0]?.is_kata_data ? topMoves[0].score_mean : null,
+    score_lead: topMoves[0]?.is_kata_data ? blackScoreLead(topMoves[0].score_mean) : null,
     best_move: topMoves[0]?.coordinate ?? null,
-    winrate: topMoves[0]?.winrate ?? null,
+    winrate: topMoves[0] ? blackWinrate(topMoves[0].winrate) : null,
     total_playouts: analysis?.total_playouts ?? 0,
     black_match_percent: null,
     white_match_percent: null,
@@ -135,13 +143,13 @@
     {#if topMoves.length > 0}
       <div class="compact-delta">
         <span class="delta-label">Δ Winrate</span>
-        <span class="delta-value" style="color: {topMoves[0].winrate >= 50 ? 'var(--green)' : 'var(--red)'}">
-          {topMoves[0].winrate >= 50 ? '+' : ''}{(topMoves[0].winrate - 50).toFixed(1)}%
+        <span class="delta-value" style="color: {bestBlackWinrate >= 50 ? 'var(--green)' : 'var(--red)'}">
+          {bestBlackWinrate >= 50 ? '+' : ''}{(bestBlackWinrate - 50).toFixed(1)}%
         </span>
       </div>
       <div class="compact-mini-bar">
-        <div class="mini-bar-segment black" style="width: {topMoves[0].winrate}%"></div>
-        <div class="mini-bar-segment white" style="width: {100 - topMoves[0].winrate}%"></div>
+        <div class="mini-bar-segment black" style="width: {bestBlackWinrate}%"></div>
+        <div class="mini-bar-segment white" style="width: {100 - bestBlackWinrate}%"></div>
       </div>
       <!-- Progress bar -->
       <div class="compact-progress">
@@ -243,7 +251,7 @@
 
       <div class="overview-strip">
         <span>首选 <strong>{currentOverview?.best_move ?? topMoves[0]?.coordinate ?? '--'}</strong></span>
-        <span>胜率 <strong class:good={(currentOverview?.winrate ?? bestWinrate) >= 50}>{currentOverview?.winrate == null ? '--' : `${currentOverview.winrate.toFixed(1)}%`}</strong></span>
+        <span>胜率 <strong class:good={(currentOverview?.winrate ?? bestBlackWinrate) >= 50}>{currentOverview?.winrate == null ? '--' : `${currentOverview.winrate.toFixed(1)}%`}</strong></span>
         <span>目差 <strong>{formatScoreLead(currentOverview?.score_lead)}</strong></span>
         <span>计算量 <strong>{formatPlayouts(currentOverview?.total_playouts ?? analysis?.total_playouts ?? 0)}</strong></span>
       </div>
@@ -251,9 +259,9 @@
       {#if topMoves.length > 0}
       <!-- Winrate mini bar -->
       <div class="wr-overview-bar">
-        <div class="wr-overview-black" style="width: {bestWinrate}%"></div>
-        <div class="wr-overview-white" style="width: {100 - bestWinrate}%"></div>
-        <span class="wr-overview-text">{bestWinrate.toFixed(1)}% vs {(100 - bestWinrate).toFixed(1)}%</span>
+        <div class="wr-overview-black" style="width: {bestBlackWinrate}%"></div>
+        <div class="wr-overview-white" style="width: {100 - bestBlackWinrate}%"></div>
+        <span class="wr-overview-text">{bestBlackWinrate.toFixed(1)}% vs {(100 - bestBlackWinrate).toFixed(1)}%</span>
       </div>
 
       <div class="moves-table-shell">
@@ -271,7 +279,7 @@
                 type="button"
                 class="table-row"
                 class:first={i === 0}
-                style="background: {i === 0 ? 'transparent' : winrateBarBg(move.winrate)}"
+                style="background: {i === 0 ? 'transparent' : winrateBarBg(blackWinrate(move.winrate))}"
                 title={`Play ${move.coordinate}`}
                 onmouseenter={() => onPreviewMove?.(move)}
                 onfocus={() => onPreviewMove?.(move)}
@@ -289,11 +297,11 @@
                 <span class="col-move">{move.coordinate}</span>
                 <span class="col-winrate">
                   <div class="wr-bar-wrap">
-                    <div class="wr-bar" style="width: {move.winrate}%; background: {winrateBarColor(move.winrate)}"></div>
-                    <span class="wr-text">{move.winrate.toFixed(1)}%</span>
+                    <div class="wr-bar" style="width: {blackWinrate(move.winrate)}%; background: {winrateBarColor(blackWinrate(move.winrate))}"></div>
+                    <span class="wr-text">{blackWinrate(move.winrate).toFixed(1)}%</span>
                   </div>
                 </span>
-                <span class="col-score">{scoreDisplay(move.score_mean, move.is_kata_data)}</span>
+                <span class="col-score">{scoreDisplay(blackScoreLead(move.score_mean), move.is_kata_data)}</span>
                 <span class="col-visits">{formatPlayouts(move.playouts)}</span>
               </button>
             {/each}

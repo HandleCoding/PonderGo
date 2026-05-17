@@ -336,6 +336,8 @@ fn build_analysis_overview(
             (!data.best_moves2.is_empty()).then_some(data.winrate2),
         ),
     };
+    let black_winrate = winrate.map(|value| if data.black_to_play { value } else { 100.0 - value });
+    let black_score_lead = score_lead.map(|value| if data.black_to_play { value } else { -value });
 
     AnalysisOverview {
         black_captures: data.black_captures,
@@ -343,9 +345,9 @@ fn build_analysis_overview(
         komi: data.komi,
         move_number: data.move_number,
         rules: None,
-        score_lead,
+        score_lead: black_score_lead,
         best_move: best_moves.first().map(|m| m.coordinate.clone()),
-        winrate,
+        winrate: black_winrate,
         total_playouts,
         black_match_percent: summary.black_match_percent,
         white_match_percent: summary.white_match_percent,

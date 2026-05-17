@@ -1128,6 +1128,7 @@
 
   /* Preview 棋盘：固定正方形大小 */
   .preview-card .sb-body-preview {
+    margin: 0 auto;
     padding: 4px;
     display: flex;
     justify-content: center;
